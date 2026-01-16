@@ -144,6 +144,7 @@ Deno.serve(async (req) => {
 
     let successCount = 0;
     let failCount = 0;
+    let skippedCount = 0;
 
     for (const job of jobs) {
       // Mark as running
@@ -188,6 +189,21 @@ Deno.serve(async (req) => {
 
       if (job.job_type === 'profile_upsert' && job.unified_user) {
         const user = job.unified_user;
+        
+        // ⛔ SKIP: Non sincronizzare profili senza email
+        if (!user.primary_email) {
+          await supabase
+            .from('sync_jobs')
+            .update({ 
+              status: 'completed', 
+              last_error: 'Skipped - no email',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
+          skippedCount++;
+          continue;
+        }
+        
         const computed = user.computed || {};
         
         // Build behavioral properties with sf_ prefix for Klaviyo
@@ -250,6 +266,20 @@ Deno.serve(async (req) => {
       } else if (job.job_type === 'event_track' && job.event) {
         const event = job.event;
         const user = job.unified_user;
+        
+        // ⛔ SKIP: Non tracciare eventi per utenti senza email
+        if (!user?.primary_email) {
+          await supabase
+            .from('sync_jobs')
+            .update({ 
+              status: 'completed', 
+              last_error: 'Skipped - no email',
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
+          skippedCount++;
+          continue;
+        }
         
         // Enhanced event name mapping for Klaviyo
         const eventNameMap: Record<string, string> = {
@@ -376,7 +406,8 @@ Deno.serve(async (req) => {
         message: 'Sync completed',
         processed: jobs.length,
         success: successCount,
-        failed: failCount
+        failed: failCount,
+        skipped: skippedCount
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
