@@ -61,6 +61,13 @@ const DashboardSettings = () => {
   const [webhookSecret, setWebhookSecret] = useState("");
   const [savingSecret, setSavingSecret] = useState(false);
   
+  // Data retention state
+  const workspaceSettings = (currentWorkspace?.settings || {}) as Record<string, unknown>;
+  const retentionSettings = (workspaceSettings.retention || {}) as Record<string, string>;
+  const [rawEventsRetention, setRawEventsRetention] = useState(retentionSettings.raw_events || "30");
+  const [processedEventsRetention, setProcessedEventsRetention] = useState(retentionSettings.processed_events || "6");
+  const [savingRetention, setSavingRetention] = useState(false);
+  
   // Cleanup state
   const [cleanupLoading, setCleanupLoading] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<{
@@ -407,22 +414,56 @@ const DashboardSettings = () => {
                     <div className="font-medium">Raw Events</div>
                     <div className="text-sm text-muted-foreground">Original event payloads</div>
                   </div>
-                  <select className="px-3 py-2 rounded-lg bg-muted border border-border text-sm">
-                    <option>30 days</option>
-                    <option>60 days</option>
-                    <option>90 days</option>
-                  </select>
+                  <Select value={rawEventsRetention} onValueChange={setRawEventsRetention}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="30">30 days</SelectItem>
+                      <SelectItem value="60">60 days</SelectItem>
+                      <SelectItem value="90">90 days</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="pt-4 border-t border-border flex items-center justify-between">
                   <div>
                     <div className="font-medium">Processed Events</div>
                     <div className="text-sm text-muted-foreground">Normalized and enriched data</div>
                   </div>
-                  <select className="px-3 py-2 rounded-lg bg-muted border border-border text-sm">
-                    <option>6 months</option>
-                    <option>12 months</option>
-                    <option>24 months</option>
-                  </select>
+                  <Select value={processedEventsRetention} onValueChange={setProcessedEventsRetention}>
+                    <SelectTrigger className="w-32">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="6">6 months</SelectItem>
+                      <SelectItem value="12">12 months</SelectItem>
+                      <SelectItem value="24">24 months</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="pt-4 border-t border-border">
+                  <Button 
+                    onClick={async () => {
+                      setSavingRetention(true);
+                      try {
+                        await updateSettings.mutateAsync({
+                          retention: {
+                            raw_events: rawEventsRetention,
+                            processed_events: processedEventsRetention
+                          }
+                        });
+                        toast.success('Retention settings saved!');
+                      } catch {
+                        toast.error('Failed to save retention settings');
+                      }
+                      setSavingRetention(false);
+                    }}
+                    disabled={savingRetention}
+                    size="sm"
+                  >
+                    {savingRetention ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Save Retention Settings
+                  </Button>
                 </div>
               </div>
             </section>

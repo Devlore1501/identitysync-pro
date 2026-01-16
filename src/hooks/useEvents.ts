@@ -17,16 +17,18 @@ interface Event {
 
 interface UseEventsOptions {
   limit?: number;
+  page?: number;
   status?: 'pending' | 'processed' | 'failed' | 'synced';
   eventType?: string;
+  search?: string;
 }
 
 export function useEvents(options: UseEventsOptions = {}) {
   const { currentWorkspace } = useWorkspace();
-  const { limit = 50, status, eventType } = options;
+  const { limit = 50, page = 0, status, eventType, search } = options;
 
   return useQuery({
-    queryKey: ['events', currentWorkspace?.id, limit, status, eventType],
+    queryKey: ['events', currentWorkspace?.id, limit, page, status, eventType, search],
     queryFn: async (): Promise<Event[]> => {
       if (!currentWorkspace?.id) return [];
 
@@ -35,13 +37,17 @@ export function useEvents(options: UseEventsOptions = {}) {
         .select('*')
         .eq('workspace_id', currentWorkspace.id)
         .order('event_time', { ascending: false })
-        .limit(limit);
+        .range(page * limit, (page + 1) * limit - 1);
 
       if (status) {
         query = query.eq('status', status);
       }
       if (eventType) {
         query = query.eq('event_type', eventType);
+      }
+      if (search && search.trim()) {
+        // Search in event_name, event_type, or id
+        query = query.or(`event_name.ilike.%${search}%,event_type.ilike.%${search}%,id.ilike.%${search}%`);
       }
 
       const { data, error } = await query;
@@ -53,19 +59,30 @@ export function useEvents(options: UseEventsOptions = {}) {
   });
 }
 
-export function useEventsCount() {
+export function useEventsCount(search?: string) {
   const { currentWorkspace } = useWorkspace();
 
   return useQuery({
-    queryKey: ['events-count', currentWorkspace?.id],
+    queryKey: ['events-count', currentWorkspace?.id, search],
     queryFn: async () => {
-      if (!currentWorkspace?.id) return { today: 0, week: 0 };
+      if (!currentWorkspace?.id) return { total: 0, today: 0, week: 0 };
 
       const now = new Date();
       const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).toISOString();
       const startOfWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
-      const [todayResult, weekResult] = await Promise.all([
+      // Build base query for total count
+      let totalQuery = supabase
+        .from('events')
+        .select('*', { count: 'exact', head: true })
+        .eq('workspace_id', currentWorkspace.id);
+      
+      if (search && search.trim()) {
+        totalQuery = totalQuery.or(`event_name.ilike.%${search}%,event_type.ilike.%${search}%,id.ilike.%${search}%`);
+      }
+
+      const [totalResult, todayResult, weekResult] = await Promise.all([
+        totalQuery,
         supabase
           .from('events')
           .select('*', { count: 'exact', head: true })
@@ -79,6 +96,7 @@ export function useEventsCount() {
       ]);
 
       return {
+        total: totalResult.count || 0,
         today: todayResult.count || 0,
         week: weekResult.count || 0,
       };

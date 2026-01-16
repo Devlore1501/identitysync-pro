@@ -17,14 +17,40 @@ interface SyncResult {
   error?: string;
 }
 
+const AUTO_SYNC_KEY = 'pixel_auto_sync_enabled';
+const LAST_SYNC_KEY = 'pixel_last_sync_time';
+
 export function SyncControl() {
   const [syncing, setSyncing] = useState(false);
   const [processingBackground, setProcessingBackground] = useState(false);
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
-  const [autoSync, setAutoSync] = useState(false);
+  const [autoSync, setAutoSync] = useState(() => {
+    return localStorage.getItem(AUTO_SYNC_KEY) === 'true';
+  });
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(() => {
+    return localStorage.getItem(LAST_SYNC_KEY);
+  });
   const autoSyncRef = useRef<NodeJS.Timeout | null>(null);
   const { data: syncStats, refetch: refetchStats } = useSyncStats();
   const queryClient = useQueryClient();
+
+  // Persist auto-sync state
+  useEffect(() => {
+    localStorage.setItem(AUTO_SYNC_KEY, autoSync.toString());
+  }, [autoSync]);
+
+  const formatTimeAgo = (isoString: string | null) => {
+    if (!isoString) return 'Never';
+    const date = new Date(isoString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    
+    if (diffMins < 1) return 'Just now';
+    if (diffMins < 60) return `${diffMins} min ago`;
+    if (diffMins < 1440) return `${Math.floor(diffMins / 60)} hours ago`;
+    return `${Math.floor(diffMins / 1440)} days ago`;
+  };
 
   // Auto-sync effect
   useEffect(() => {
@@ -79,6 +105,10 @@ export function SyncControl() {
         skipped: klaviyoResult.skipped || 0,
       };
       setLastResult(result);
+      
+      const now = new Date().toISOString();
+      setLastSyncTime(now);
+      localStorage.setItem(LAST_SYNC_KEY, now);
 
       if (response.ok) {
         if (result.processed && result.processed > 0) {
@@ -190,6 +220,12 @@ export function SyncControl() {
             Sync automatico ogni 30 secondi
           </p>
         )}
+
+        {/* Last sync time */}
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-muted-foreground">Last sync:</span>
+          <span className="font-medium">{formatTimeAgo(lastSyncTime)}</span>
+        </div>
 
         {/* Pending jobs indicator */}
         <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
