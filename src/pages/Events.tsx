@@ -1,27 +1,23 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Download, RefreshCw } from "lucide-react";
-
-const events = [
-  { id: "evt_a1b2c3", type: "purchase", email: "john@example.com", value: 129.00, source: "webhook", status: "synced", time: "2024-01-15 14:23:45" },
-  { id: "evt_d4e5f6", type: "add_to_cart", email: "sarah@example.com", value: 45.00, source: "browser", status: "synced", time: "2024-01-15 14:22:12" },
-  { id: "evt_g7h8i9", type: "view_item", email: null, value: null, source: "browser", status: "pending", time: "2024-01-15 14:21:58" },
-  { id: "evt_j0k1l2", type: "checkout_started", email: "mike@example.com", value: 89.00, source: "browser", status: "synced", time: "2024-01-15 14:20:33" },
-  { id: "evt_m3n4o5", type: "view_item", email: "lisa@example.com", value: null, source: "browser", status: "synced", time: "2024-01-15 14:19:47" },
-  { id: "evt_p6q7r8", type: "purchase", email: "david@example.com", value: 245.00, source: "webhook", status: "synced", time: "2024-01-15 14:18:22" },
-  { id: "evt_s9t0u1", type: "add_to_cart", email: null, value: 67.00, source: "browser", status: "pending", time: "2024-01-15 14:17:01" },
-  { id: "evt_v2w3x4", type: "checkout_started", email: "emma@example.com", value: 156.00, source: "browser", status: "synced", time: "2024-01-15 14:15:55" },
-];
+import { Search, Filter, Download, RefreshCw, Loader2 } from "lucide-react";
+import { useEvents, useEventsCount } from "@/hooks/useEvents";
+import { format } from "date-fns";
 
 const eventTypeColors: Record<string, string> = {
-  purchase: "bg-success/20 text-success border-success/30",
-  add_to_cart: "bg-warning/20 text-warning border-warning/30",
-  checkout_started: "bg-info/20 text-info border-info/30",
+  purchase: "bg-green-500/20 text-green-600 border-green-500/30",
+  add_to_cart: "bg-yellow-500/20 text-yellow-600 border-yellow-500/30",
+  begin_checkout: "bg-blue-500/20 text-blue-600 border-blue-500/30",
   view_item: "bg-muted text-muted-foreground border-border",
+  page_view: "bg-muted text-muted-foreground border-border",
+  custom: "bg-purple-500/20 text-purple-600 border-purple-500/30",
 };
 
 const Events = () => {
+  const { data: events, isLoading, refetch } = useEvents({ limit: 50 });
+  const { data: eventsCount } = useEventsCount();
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -36,7 +32,7 @@ const Events = () => {
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
               <RefreshCw className="w-4 h-4 mr-2" />
               Refresh
             </Button>
@@ -61,70 +57,83 @@ const Events = () => {
 
         {/* Events table */}
         <div className="metric-card p-0 overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Event ID</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Type</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Email</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Value</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Source</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Status</th>
-                  <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Time</th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((event, index) => (
-                  <tr 
-                    key={event.id} 
-                    className="border-b border-border/50 data-row animate-fade-in"
-                    style={{ animationDelay: `${index * 0.03}s` }}
-                  >
-                    <td className="px-6 py-4">
-                      <span className="font-mono text-sm">{event.id}</span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <Badge variant="outline" className={eventTypeColors[event.type]}>
-                        {event.type.replace("_", " ")}
-                      </Badge>
-                    </td>
-                    <td className="px-6 py-4 text-sm">
-                      {event.email || <span className="text-muted-foreground italic">anonymous</span>}
-                    </td>
-                    <td className="px-6 py-4 text-sm font-medium">
-                      {event.value ? `$${event.value.toFixed(2)}` : "-"}
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={`text-xs px-2 py-1 rounded ${
-                        event.source === "webhook" ? "bg-primary/10 text-primary" : "bg-accent/10 text-accent"
-                      }`}>
-                        {event.source}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4">
-                      <span className={event.status === "synced" ? "status-success" : "status-warning"}>
-                        {event.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">
-                      {event.time}
-                    </td>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : events && events.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Event ID</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Type</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Name</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Source</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Status</th>
+                    <th className="text-left text-xs font-medium text-muted-foreground uppercase tracking-wider px-6 py-4">Time</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {events.map((event, index) => (
+                    <tr 
+                      key={event.id} 
+                      className="border-b border-border/50 hover:bg-muted/30 transition-colors animate-fade-in"
+                      style={{ animationDelay: `${index * 0.03}s` }}
+                    >
+                      <td className="px-6 py-4">
+                        <span className="font-mono text-sm">{event.id.slice(0, 8)}...</span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <Badge variant="outline" className={eventTypeColors[event.event_type] || eventTypeColors.custom}>
+                          {event.event_type.replace("_", " ")}
+                        </Badge>
+                      </td>
+                      <td className="px-6 py-4 text-sm">
+                        {event.event_name}
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          event.source === "webhook" ? "bg-primary/10 text-primary" : "bg-accent/10 text-accent"
+                        }`}>
+                          {event.source}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4">
+                        <span className={`text-xs px-2 py-1 rounded ${
+                          event.status === "synced" 
+                            ? "bg-green-500/20 text-green-600" 
+                            : event.status === "processed"
+                            ? "bg-blue-500/20 text-blue-600"
+                            : "bg-yellow-500/20 text-yellow-600"
+                        }`}>
+                          {event.status}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-sm text-muted-foreground">
+                        {format(new Date(event.event_time), 'MMM d, HH:mm:ss')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <p className="mb-2">No events captured yet</p>
+              <p className="text-sm">Events will appear here once you start tracking.</p>
+            </div>
+          )}
         </div>
 
         {/* Pagination */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing 1-8 of 24,847 events
+            Showing {events?.length || 0} of {eventsCount?.week?.toLocaleString() || 0} events (last 7 days)
           </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled>Previous</Button>
-            <Button variant="outline" size="sm">Next</Button>
+            <Button variant="outline" size="sm" disabled={!events || events.length < 50}>Next</Button>
           </div>
         </div>
       </div>
