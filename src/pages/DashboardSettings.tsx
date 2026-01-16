@@ -55,6 +55,10 @@ const DashboardSettings = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   
+  // Get tab from URL params
+  const searchParams = new URLSearchParams(window.location.search);
+  const defaultTab = searchParams.get("tab") || "general";
+  
   // Workspace edit state
   const [editingWorkspace, setEditingWorkspace] = useState(false);
   const [workspaceName, setWorkspaceName] = useState("");
@@ -186,7 +190,7 @@ const DashboardSettings = () => {
   return (
     <DashboardLayout>
       <div className="max-w-4xl">
-        <Tabs defaultValue="general" className="space-y-6">
+        <Tabs defaultValue={defaultTab} className="space-y-6">
           <TabsList>
             <TabsTrigger value="general" className="flex items-center gap-2">
               <Settings className="w-4 h-4" />
