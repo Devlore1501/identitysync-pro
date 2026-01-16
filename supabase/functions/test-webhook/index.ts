@@ -147,6 +147,219 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
 
+    } else if (test_type === 'add_to_cart') {
+      // Simulate Add to Cart event
+      const { data: identityResult } = await supabase.rpc('resolve_identity', {
+        p_workspace_id: workspace_id,
+        p_anonymous_id: anonymousId,
+        p_source: 'pixel'
+      });
+
+      const unifiedUserId = identityResult;
+
+      const cartEvent = {
+        workspace_id,
+        unified_user_id: unifiedUserId,
+        event_name: 'Add to Cart',
+        event_type: 'cart',
+        source: 'pixel',
+        event_time: new Date().toISOString(),
+        anonymous_id: anonymousId,
+        session_id: `sess_test_${Date.now().toString(36)}`,
+        properties: {
+          product_id: 'PROD_TEST_001',
+          product_name: 'Test Product - Sneakers Nike',
+          variant_id: 'VAR_001',
+          quantity: 1,
+          price: 129.99,
+          currency: 'EUR',
+          collection_handle: 'sneakers',
+          category: 'footwear',
+          test: true
+        },
+        context: {
+          source: 'test-webhook-function',
+          page: { url: 'https://test-store.com/products/sneakers-nike' }
+        },
+        status: 'processed'
+      };
+
+      const { data: event, error: eventError } = await supabase
+        .from('events')
+        .insert(cartEvent)
+        .select()
+        .single();
+
+      if (eventError) {
+        return new Response(
+          JSON.stringify({ error: 'Failed to create cart event', details: eventError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Update computed traits
+      await supabase.rpc('update_computed_traits_fast', {
+        p_unified_user_id: unifiedUserId,
+        p_event_type: 'cart',
+        p_event_name: 'Add to Cart',
+        p_properties: cartEvent.properties
+      });
+
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          test_type: 'add_to_cart',
+          message: 'Add to Cart event created!',
+          event_id: event.id,
+          event_name: event.event_name,
+          product_name: 'Test Product - Sneakers Nike',
+          unified_user_id: unifiedUserId
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+
+    } else if (test_type === 'checkout') {
+      // Simulate Begin Checkout event (with email if provided)
+      const { data: identityResult } = await supabase.rpc('resolve_identity', {
+        p_workspace_id: workspace_id,
+        p_anonymous_id: anonymousId,
+        p_email: test_email || null,
+        p_source: 'pixel'
+      });
+
+      const unifiedUserId = identityResult;
+
+      const checkoutEvent = {
+        workspace_id,
+        unified_user_id: unifiedUserId,
+        event_name: 'Begin Checkout',
+        event_type: 'checkout',
+        source: 'pixel',
+        event_time: new Date().toISOString(),
+        anonymous_id: anonymousId,
+        session_id: `sess_test_${Date.now().toString(36)}`,
+        properties: {
+          checkout_id: `CHK_${Date.now()}`,
+          email: test_email || null,
+          total: 259.98,
+          currency: 'EUR',
+          item_count: 2,
+          step: 'started',
+          test: true
+        },
+        context: {
+          source: 'test-webhook-function',
+          page: { url: 'https://test-store.com/checkout' }
+        },
+        status: 'processed'
+      };
+
+      const { data: event, error: eventError } = await supabase
+        .from('events')
+        .insert(checkoutEvent)
+        .select()
+        .single();
+
+      if (eventError) {
+        return new Response(
+          JSON.stringify({ error: 'Failed to create checkout event', details: eventError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Update computed traits
+      await supabase.rpc('update_computed_traits_fast', {
+        p_unified_user_id: unifiedUserId,
+        p_event_type: 'checkout',
+        p_event_name: 'Begin Checkout',
+        p_properties: checkoutEvent.properties
+      });
+
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          test_type: 'checkout',
+          message: 'Begin Checkout event created!',
+          event_id: event.id,
+          event_name: event.event_name,
+          email: test_email || 'anonymous',
+          unified_user_id: unifiedUserId
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+
+    } else if (test_type === 'product_view') {
+      // Simulate Product Viewed event
+      const { data: identityResult } = await supabase.rpc('resolve_identity', {
+        p_workspace_id: workspace_id,
+        p_anonymous_id: anonymousId,
+        p_source: 'pixel'
+      });
+
+      const unifiedUserId = identityResult;
+
+      const productEvent = {
+        workspace_id,
+        unified_user_id: unifiedUserId,
+        event_name: 'Product Viewed',
+        event_type: 'product',
+        source: 'pixel',
+        event_time: new Date().toISOString(),
+        anonymous_id: anonymousId,
+        session_id: `sess_test_${Date.now().toString(36)}`,
+        properties: {
+          product_id: 'PROD_TEST_' + Math.floor(Math.random() * 100),
+          product_name: 'Test Product - Running Shoes',
+          product_handle: 'running-shoes-test',
+          product_type: 'Footwear',
+          vendor: 'Nike',
+          category: 'sneakers',
+          collection_handle: 'running',
+          price: 149.99,
+          currency: 'EUR',
+          test: true
+        },
+        context: {
+          source: 'test-webhook-function',
+          page: { url: 'https://test-store.com/products/running-shoes-test' }
+        },
+        status: 'processed'
+      };
+
+      const { data: event, error: eventError } = await supabase
+        .from('events')
+        .insert(productEvent)
+        .select()
+        .single();
+
+      if (eventError) {
+        return new Response(
+          JSON.stringify({ error: 'Failed to create product event', details: eventError.message }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      // Update computed traits
+      await supabase.rpc('update_computed_traits_fast', {
+        p_unified_user_id: unifiedUserId,
+        p_event_type: 'product',
+        p_event_name: 'Product Viewed',
+        p_properties: productEvent.properties
+      });
+
+      return new Response(
+        JSON.stringify({ 
+          success: true,
+          test_type: 'product_view',
+          message: 'Product Viewed event created!',
+          event_id: event.id,
+          event_name: event.event_name,
+          product_name: 'Test Product - Running Shoes',
+          unified_user_id: unifiedUserId
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+
     } else {
       // Simple test webhook (original behavior)
       const testEvent = {

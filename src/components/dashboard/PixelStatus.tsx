@@ -2,7 +2,7 @@ import { usePixelStatus } from "@/hooks/useFunnelStats";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { CheckCircle2, XCircle, Clock, Code, Webhook, Loader2, Send, ShoppingCart, Mail, User } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Code, Webhook, Loader2, Send, ShoppingCart, Mail, User, Eye, CreditCard } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { it } from "date-fns/locale";
 import { useState } from "react";
@@ -17,6 +17,8 @@ interface TestResult {
   unified_user_id?: string;
   order_id?: string;
   message?: string;
+  event_name?: string;
+  product_name?: string;
 }
 
 export function PixelStatus() {
@@ -26,6 +28,9 @@ export function PixelStatus() {
   const queryClient = useQueryClient();
   const [isTesting, setIsTesting] = useState(false);
   const [isTestingOrder, setIsTestingOrder] = useState(false);
+  const [isTestingCart, setIsTestingCart] = useState(false);
+  const [isTestingCheckout, setIsTestingCheckout] = useState(false);
+  const [isTestingProduct, setIsTestingProduct] = useState(false);
   const [testEmail, setTestEmail] = useState('');
   const [testResult, setTestResult] = useState<TestResult | null>(null);
 
@@ -122,6 +127,58 @@ export function PixelStatus() {
       });
     } finally {
       setIsTestingOrder(false);
+    }
+  };
+
+  const handleTestEvent = async (testType: 'add_to_cart' | 'checkout' | 'product_view') => {
+    if (!currentWorkspace?.id) {
+      toast({ title: "Errore", description: "Workspace non trovato", variant: "destructive" });
+      return;
+    }
+
+    const setLoading = testType === 'add_to_cart' ? setIsTestingCart : 
+                       testType === 'checkout' ? setIsTestingCheckout : setIsTestingProduct;
+    
+    setLoading(true);
+    setTestResult(null);
+    
+    try {
+      const { data, error } = await supabase.functions.invoke('test-webhook', {
+        body: { 
+          workspace_id: currentWorkspace.id, 
+          test_type: testType,
+          test_email: testType === 'checkout' ? testEmail || undefined : undefined
+        }
+      });
+
+      if (error) throw error;
+
+      setTestResult({
+        success: true,
+        event_name: data.event_name,
+        product_name: data.product_name,
+        unified_user_id: data.unified_user_id,
+        email: data.email,
+        message: data.message
+      });
+
+      toast({
+        title: `${data.event_name} creato!`,
+        description: data.message,
+      });
+
+      // Refresh queries
+      queryClient.invalidateQueries({ queryKey: ['pixel-status'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['behavioral-stats'] });
+    } catch (error: any) {
+      toast({
+        title: "Errore nel test",
+        description: error.message || "Impossibile creare l'evento test",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -236,6 +293,74 @@ export function PixelStatus() {
         </div>
       </div>
 
+      {/* Funnel Event Tests */}
+      <div className="p-4 rounded-lg border border-blue-500/30 bg-blue-500/5">
+        <div className="flex items-center gap-2 mb-3">
+          <Eye className="w-4 h-4" />
+          <span className="font-medium">Simula Eventi Funnel</span>
+          <Badge variant="secondary" className="ml-auto text-xs">
+            Test Comportamentali
+          </Badge>
+        </div>
+        
+        <p className="text-sm text-muted-foreground mb-3">
+          Testa gli eventi del funnel per verificare il calcolo dei segnali comportamentali.
+        </p>
+
+        <div className="grid grid-cols-3 gap-2">
+          <Button
+            onClick={() => handleTestEvent('product_view')}
+            disabled={isTestingProduct}
+            variant="outline"
+            size="sm"
+            className="w-full"
+          >
+            {isTestingProduct ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <>
+                <Eye className="w-4 h-4 mr-1" />
+                Product View
+              </>
+            )}
+          </Button>
+
+          <Button
+            onClick={() => handleTestEvent('add_to_cart')}
+            disabled={isTestingCart}
+            variant="outline"
+            size="sm"
+            className="w-full"
+          >
+            {isTestingCart ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <>
+                <ShoppingCart className="w-4 h-4 mr-1" />
+                Add to Cart
+              </>
+            )}
+          </Button>
+
+          <Button
+            onClick={() => handleTestEvent('checkout')}
+            disabled={isTestingCheckout}
+            variant="outline"
+            size="sm"
+            className="w-full"
+          >
+            {isTestingCheckout ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <>
+                <CreditCard className="w-4 h-4 mr-1" />
+                Checkout
+              </>
+            )}
+          </Button>
+        </div>
+      </div>
+
       {/* Test Order with Email */}
       <div className="p-4 rounded-lg border border-primary/30 bg-primary/5">
         <div className="flex items-center gap-2 mb-3">
@@ -293,21 +418,23 @@ export function PixelStatus() {
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
                     <CheckCircle2 className="w-4 h-4" />
-                    <span className="font-medium">Ordine creato con successo!</span>
+                    <span className="font-medium">{testResult.event_name || 'Evento creato!'}</span>
                   </div>
-                  <div className="text-xs space-y-0.5 ml-6">
-                    <div className="flex items-center gap-1">
+                  {testResult.email && (
+                    <div className="text-xs ml-6 flex items-center gap-1">
                       <Mail className="w-3 h-3" />
                       Email: <span className="font-mono">{testResult.email}</span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <User className="w-3 h-3" />
-                      Profile ID: <span className="font-mono">{testResult.unified_user_id?.slice(0, 8)}...</span>
+                  )}
+                  {testResult.product_name && (
+                    <div className="text-xs ml-6">
+                      Prodotto: <span className="font-mono">{testResult.product_name}</span>
                     </div>
+                  )}
+                  <div className="text-xs ml-6 flex items-center gap-1">
+                    <User className="w-3 h-3" />
+                    Profile: <span className="font-mono">{testResult.unified_user_id?.slice(0, 8)}...</span>
                   </div>
-                  <p className="text-xs mt-2 ml-6">
-                    Vai su <strong>Identities</strong> per vedere il profilo creato!
-                  </p>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
