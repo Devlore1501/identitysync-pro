@@ -12,6 +12,41 @@ interface WorkspaceUpdate {
   settings?: Json;
 }
 
+// Helper to log audit events
+async function logAuditEvent(
+  workspaceId: string,
+  action: 'update',
+  resourceId: string,
+  details: Record<string, unknown>
+) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+
+    await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audit-log`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          workspaceId,
+          entries: [{
+            action,
+            resource_type: 'workspace',
+            resource_id: resourceId,
+            details,
+          }],
+        }),
+      }
+    );
+  } catch (err) {
+    console.error('Failed to log audit event:', err);
+  }
+}
+
 export function useUpdateWorkspace() {
   const queryClient = useQueryClient();
   const { currentWorkspace, refetch } = useWorkspace();
@@ -26,9 +61,16 @@ export function useUpdateWorkspace() {
         .eq('id', currentWorkspace.id);
 
       if (error) throw error;
+
+      // Log audit event
+      await logAuditEvent(currentWorkspace.id, 'update', currentWorkspace.id, {
+        updated_fields: Object.keys(updates),
+        ...updates,
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
       refetch();
       toast.success('Workspace updated');
     },
@@ -56,9 +98,16 @@ export function useUpdateWorkspaceSettings() {
         .eq('id', currentWorkspace.id);
 
       if (error) throw error;
+
+      // Log audit event
+      await logAuditEvent(currentWorkspace.id, 'update', currentWorkspace.id, {
+        resource_type: 'settings',
+        updated_settings: Object.keys(settingsUpdate),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
       refetch();
       toast.success('Settings updated');
     },

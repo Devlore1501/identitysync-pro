@@ -115,43 +115,40 @@ export function useDeleteIdentity() {
     mutationFn: async (profileId: string) => {
       if (!currentWorkspace?.id) throw new Error('No workspace selected');
 
-      // Delete in order: identities -> events -> unified user
-      const { error: identitiesError } = await supabase
-        .from('identities')
-        .delete()
-        .eq('unified_user_id', profileId)
-        .eq('workspace_id', currentWorkspace.id);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) throw new Error('Not authenticated');
 
-      if (identitiesError) throw identitiesError;
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/gdpr-delete`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({
+            profileId,
+            workspaceId: currentWorkspace.id,
+          }),
+        }
+      );
 
-      // Update events to remove reference (don't delete events for audit trail)
-      const { error: eventsError } = await supabase
-        .from('events')
-        .update({ unified_user_id: null })
-        .eq('unified_user_id', profileId)
-        .eq('workspace_id', currentWorkspace.id);
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete profile');
+      }
 
-      if (eventsError) throw eventsError;
-
-      // Delete unified user
-      const { error: userError } = await supabase
-        .from('users_unified')
-        .delete()
-        .eq('id', profileId)
-        .eq('workspace_id', currentWorkspace.id);
-
-      if (userError) throw userError;
-
-      return { success: true };
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['identities'] });
       queryClient.invalidateQueries({ queryKey: ['identities-count'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
       toast.success('Profile deleted successfully (GDPR compliance)');
     },
     onError: (error) => {
       console.error('Error deleting profile:', error);
-      toast.error('Failed to delete profile');
+      toast.error(error instanceof Error ? error.message : 'Failed to delete profile');
     },
   });
 }

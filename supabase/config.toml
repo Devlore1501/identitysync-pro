@@ -17,3 +17,9 @@ verify_jwt = false
 
 [functions.webhooks-shopify]
 verify_jwt = false
+
+[functions.gdpr-delete]
+verify_jwt = false
+
+[functions.audit-log]
+verify_jwt = false

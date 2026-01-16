@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { toast } from 'sonner';
 
 interface ApiKey {
   id: string;
@@ -31,6 +32,41 @@ async function hashApiKey(apiKey: string): Promise<string> {
   const hashBuffer = await crypto.subtle.digest('SHA-256', data);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Helper to log audit events
+async function logAuditEvent(
+  workspaceId: string,
+  action: 'create' | 'revoke',
+  resourceId: string,
+  details: Record<string, unknown>
+) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+
+    await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audit-log`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          workspaceId,
+          entries: [{
+            action,
+            resource_type: 'api_key',
+            resource_id: resourceId,
+            details,
+          }],
+        }),
+      }
+    );
+  } catch (err) {
+    console.error('Failed to log audit event:', err);
+  }
 }
 
 export function useApiKeys() {
@@ -80,25 +116,60 @@ export function useApiKeys() {
       // Store the full API key in localStorage for snippet generation
       localStorage.setItem(`sf_api_key_${currentWorkspace.id}`, rawKey);
       
+      // Log audit event
+      await logAuditEvent(currentWorkspace.id, 'create', data.id, {
+        name,
+        scopes,
+        key_prefix: keyPrefix,
+      });
+      
       // Return the raw key (only shown once) along with the created record
       return { ...data, raw_key: rawKey };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['api-keys', currentWorkspace?.id] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      toast.success('API key created');
+    },
+    onError: (error) => {
+      console.error('Error creating API key:', error);
+      toast.error('Failed to create API key');
     },
   });
 
   const revokeApiKey = useMutation({
     mutationFn: async (keyId: string) => {
+      if (!currentWorkspace?.id) throw new Error('No workspace selected');
+      
+      // Get key info before revoking for audit log
+      const { data: keyInfo } = await supabase
+        .from('api_keys')
+        .select('name, key_prefix')
+        .eq('id', keyId)
+        .single();
+      
       const { error } = await supabase
         .from('api_keys')
         .update({ revoked_at: new Date().toISOString() })
         .eq('id', keyId);
       
       if (error) throw error;
+      
+      // Log audit event
+      await logAuditEvent(currentWorkspace.id, 'revoke', keyId, {
+        name: keyInfo?.name,
+        key_prefix: keyInfo?.key_prefix,
+        revoked_at: new Date().toISOString(),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['api-keys', currentWorkspace?.id] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      toast.success('API key revoked');
+    },
+    onError: (error) => {
+      console.error('Error revoking API key:', error);
+      toast.error('Failed to revoke API key');
     },
   });
 
