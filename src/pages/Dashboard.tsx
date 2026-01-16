@@ -1,18 +1,27 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
-import { EventsChart } from "@/components/dashboard/EventsChart";
-import { RecentEvents } from "@/components/dashboard/RecentEvents";
 import { IdentityGraph } from "@/components/dashboard/IdentityGraph";
 import { FunnelWidget } from "@/components/dashboard/FunnelWidget";
 import { BehavioralInsights } from "@/components/dashboard/BehavioralInsights";
+import { SegmentsWidget } from "@/components/dashboard/SegmentsWidget";
+import { SyncIntelligenceWidget } from "@/components/dashboard/SyncIntelligenceWidget";
 import { SyncControl } from "@/components/dashboard/SyncControl";
-import { Activity, Users, Send, Clock, CheckCircle, AlertCircle, Code, Mail, MailX, RefreshCw } from "lucide-react";
+import { 
+  Target, 
+  Users, 
+  Mail, 
+  Brain,
+  RefreshCw,
+  CheckCircle,
+  AlertCircle,
+  Zap
+} from "lucide-react";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { useDestinations } from "@/hooks/useDestinations";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
-import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
 import { it } from "date-fns/locale";
 
@@ -28,222 +37,143 @@ const Dashboard = () => {
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        {/* Header with refresh */}
+        {/* Header - Behavior Intelligence */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">Dashboard</h1>
-            {health?.lastEventAt && (
-              <p className="text-sm text-muted-foreground">
-                Ultimo evento: {formatDistanceToNow(new Date(health.lastEventAt), { addSuffix: true, locale: it })}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              <Brain className="w-6 h-6 text-primary" />
+              <h1 className="text-2xl font-bold">Behavior Intelligence</h1>
+            </div>
+            <p className="text-sm text-muted-foreground mt-1">
+              Segnali comportamentali che rendono Klaviyo più intelligente
+            </p>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-            <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-            Aggiorna
-          </Button>
+          <div className="flex items-center gap-2">
+            {health?.lastEventAt && (
+              <Badge variant="outline" className="text-xs">
+                Ultimo evento: {formatDistanceToNow(new Date(health.lastEventAt), { addSuffix: true, locale: it })}
+              </Badge>
+            )}
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Aggiorna
+            </Button>
+          </div>
         </div>
 
-        {/* Main Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <MetricCard
-            title="Eventi Oggi"
-            value={health?.eventsToday?.toLocaleString() || "0"}
-            change={health?.eventsThisWeek ? Math.round((health.eventsToday / health.eventsThisWeek) * 100) : 0}
-            icon={<Activity className="w-5 h-5 text-primary" />}
-          />
+        {/* Core Behavioral Metrics - Only what matters */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
             title="Profili Totali"
             value={health?.totalUsers?.toLocaleString() || "0"}
             change={0}
-            icon={<Users className="w-5 h-5 text-accent" />}
+            icon={<Users className="w-5 h-5 text-primary" />}
           />
           <MetricCard
-            title="Con Email"
+            title="Identificati (con email)"
             value={health?.usersWithEmail?.toLocaleString() || "0"}
             change={health?.emailCaptureRate || 0}
             icon={<Mail className="w-5 h-5 text-green-500" />}
           />
           <MetricCard
+            title="Email Capture Rate"
+            value={`${health?.emailCaptureRate || 0}%`}
+            change={0}
+            icon={<Target className="w-5 h-5 text-accent" />}
+          />
+          <MetricCard
             title="Sync Pendenti"
             value={health?.pendingSyncs?.toString() || "0"}
             change={0}
-            icon={<Clock className="w-5 h-5 text-blue-500" />}
+            icon={<Zap className="w-5 h-5 text-blue-500" />}
           />
         </div>
 
-        {/* Email Capture Rate Alert */}
-        {health && health.totalUsers > 0 && health.emailCaptureRate < 50 && (
-          <div className="p-4 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-            <div className="flex items-start gap-3">
-              <MailX className="w-5 h-5 text-yellow-600 mt-0.5" />
-              <div className="flex-1">
-                <h3 className="font-medium text-yellow-700">Basso tasso di acquisizione email</h3>
-                <p className="text-sm text-yellow-600 mt-1">
-                  Solo {health.emailCaptureRate}% dei tuoi utenti ha un'email. 
-                  {health.usersWithoutEmail} profili non possono essere sincronizzati con Klaviyo.
-                </p>
-                <div className="mt-3">
-                  <Progress value={health.emailCaptureRate} className="h-2" />
-                  <div className="flex justify-between text-xs text-muted-foreground mt-1">
-                    <span>{health.usersWithEmail} con email</span>
-                    <span>{health.usersWithoutEmail} senza email</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        {/* Behavioral Intelligence Section */}
+        <BehavioralInsights />
 
-        {/* Sync Status Summary */}
-        {health && (health.completedSyncs > 0 || health.failedSyncs > 0 || health.skippedSyncs > 0) && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-600" />
-                <span className="text-sm font-medium">Completati</span>
-              </div>
-              <p className="text-2xl font-bold text-green-600 mt-1">{health.completedSyncs}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-yellow-500/10 border border-yellow-500/20">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-yellow-600" />
-                <span className="text-sm font-medium">Pendenti</span>
-              </div>
-              <p className="text-2xl font-bold text-yellow-600 mt-1">{health.pendingSyncs}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-gray-500/10 border border-gray-500/20">
-              <div className="flex items-center gap-2">
-                <MailX className="w-4 h-4 text-gray-600" />
-                <span className="text-sm font-medium">Skippati (no email)</span>
-              </div>
-              <p className="text-2xl font-bold text-gray-600 mt-1">{health.skippedSyncs}</p>
-            </div>
-            <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-red-600" />
-                <span className="text-sm font-medium">Falliti</span>
-              </div>
-              <p className="text-2xl font-bold text-red-600 mt-1">{health.failedSyncs}</p>
-            </div>
-          </div>
-        )}
-
-        {/* Charts row */}
+        {/* Segments + Identity Resolution */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <EventsChart />
-          <RecentEvents />
-        </div>
-
-        {/* Funnel & Identity section */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <FunnelWidget />
+          <SegmentsWidget />
           <IdentityGraph />
         </div>
 
-        {/* Behavioral Intelligence + Sync Control */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2">
-            <BehavioralInsights />
-          </div>
-          <SyncControl />
+        {/* Funnel + Sync Intelligence */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <FunnelWidget />
+          <SyncIntelligenceWidget />
         </div>
 
-        {/* Setup checklist */}
-        <div className="metric-card">
-          <h3 className="text-lg font-semibold mb-4">Setup Checklist</h3>
-          <div className="space-y-4">
-            <div className="p-4 rounded-lg bg-muted/30 border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {hasApiKey ? (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-yellow-500" />
-                  )}
-                  <span className="font-medium">Crea API Key</span>
-                </div>
+        {/* Sync Control */}
+        <SyncControl />
+
+        {/* Quick Setup - Collapsed */}
+        <details className="metric-card">
+          <summary className="cursor-pointer text-lg font-semibold flex items-center gap-2">
+            <span>Setup Checklist</span>
+            <Badge variant="secondary" className="text-xs">
+              {[hasApiKey, klaviyoConnected, health?.eventsToday > 0].filter(Boolean).length}/3 completati
+            </Badge>
+          </summary>
+          <div className="mt-4 space-y-3">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border">
+              <div className="flex items-center gap-3">
                 {hasApiKey ? (
-                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">Fatto</span>
+                  <CheckCircle className="w-5 h-5 text-green-500" />
                 ) : (
-                  <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/settings')}>
-                    Crea
-                  </Button>
+                  <AlertCircle className="w-5 h-5 text-yellow-500" />
                 )}
+                <div>
+                  <span className="font-medium">API Key</span>
+                  <p className="text-xs text-muted-foreground">Per autenticare il tracking</p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Genera un'API key per autenticare il tracking degli eventi.
-              </p>
+              {!hasApiKey && (
+                <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/settings')}>
+                  Crea
+                </Button>
+              )}
             </div>
 
-            <div className="p-4 rounded-lg bg-muted/30 border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {health && health.eventsToday > 0 ? (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <Code className="w-4 h-4 text-muted-foreground" />
-                  )}
-                  <span className="font-medium">Installa JS Snippet</span>
-                </div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border">
+              <div className="flex items-center gap-3">
                 {health && health.eventsToday > 0 ? (
-                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">Attivo</span>
+                  <CheckCircle className="w-5 h-5 text-green-500" />
                 ) : (
-                  <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/settings')}>
-                    Installa
-                  </Button>
+                  <AlertCircle className="w-5 h-5 text-yellow-500" />
                 )}
+                <div>
+                  <span className="font-medium">JS Snippet</span>
+                  <p className="text-xs text-muted-foreground">Per catturare eventi dal browser</p>
+                </div>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Aggiungi lo snippet di tracking per catturare eventi dal browser.
-              </p>
+              {!(health && health.eventsToday > 0) && (
+                <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/settings')}>
+                  Installa
+                </Button>
+              )}
             </div>
 
-            <div className="p-4 rounded-lg bg-muted/30 border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {klaviyoConnected ? (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-yellow-500" />
-                  )}
-                  <span className="font-medium">Connetti Klaviyo</span>
-                </div>
+            <div className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border">
+              <div className="flex items-center gap-3">
                 {klaviyoConnected ? (
-                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">Connesso</span>
+                  <CheckCircle className="w-5 h-5 text-green-500" />
                 ) : (
-                  <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/destinations')}>
-                    Connetti
-                  </Button>
+                  <AlertCircle className="w-5 h-5 text-yellow-500" />
                 )}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                Sincronizza profili ed eventi con il tuo account Klaviyo.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-lg bg-muted/30 border border-border">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  {health && health.emailCaptureRate >= 20 ? (
-                    <CheckCircle className="w-4 h-4 text-green-500" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-yellow-500" />
-                  )}
-                  <span className="font-medium">Acquisisci Email</span>
+                <div>
+                  <span className="font-medium">Klaviyo</span>
+                  <p className="text-xs text-muted-foreground">Per sincronizzare i segnali comportamentali</p>
                 </div>
-                {health && health.emailCaptureRate >= 20 ? (
-                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">{health.emailCaptureRate}%</span>
-                ) : (
-                  <span className="text-xs px-2 py-1 rounded bg-yellow-500/20 text-yellow-600">{health?.emailCaptureRate || 0}%</span>
-                )}
               </div>
-              <p className="text-sm text-muted-foreground">
-                Usa newsletter, checkout o login per collegare email ai profili anonimi.
-              </p>
+              {!klaviyoConnected && (
+                <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/destinations')}>
+                  Connetti
+                </Button>
+              )}
             </div>
           </div>
-        </div>
+        </details>
       </div>
     </DashboardLayout>
   );
