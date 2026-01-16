@@ -23,6 +23,14 @@ const funnelIcons = {
 
 const funnelLabels = {
   visitor: 'Visitor',
+  browse_abandoned: 'Browse',
+  cart_abandoned: 'Cart',
+  checkout_abandoned: 'Checkout',
+  completed: 'Done',
+};
+
+const funnelLabelsFull = {
+  visitor: 'Visitor',
   browse_abandoned: 'Browse Abandon',
   cart_abandoned: 'Cart Abandon',
   checkout_abandoned: 'Checkout Abandon',
@@ -42,10 +50,10 @@ export function BehavioralInsights() {
 
   if (isLoading) {
     return (
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Skeleton className="h-[200px]" />
-        <Skeleton className="h-[200px]" />
-        <Skeleton className="h-[200px]" />
+      <div className="grid gap-3 md:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+        <Skeleton className="h-[180px] md:h-[200px]" />
+        <Skeleton className="h-[180px] md:h-[200px]" />
+        <Skeleton className="h-[180px] md:h-[200px]" />
       </div>
     );
   }
@@ -58,26 +66,26 @@ export function BehavioralInsights() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <Target className="w-5 h-5 text-primary" />
-        <h2 className="text-lg font-semibold">Behavioral Intelligence</h2>
+        <Target className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+        <h2 className="text-base md:text-lg font-semibold">Behavioral Intelligence</h2>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-3 md:gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {/* Intent Score Distribution */}
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 p-3 md:p-6 md:pb-2">
             <CardTitle className="text-sm font-medium">Intent Distribution</CardTitle>
-            <CardDescription>User purchase intent levels</CardDescription>
+            <CardDescription className="text-xs">User purchase intent levels</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
+          <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
+            <div className="space-y-2 md:space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-green-500" />
-                  <span className="text-sm">High (61-100)</span>
+                  <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-green-500" />
+                  <span className="text-xs md:text-sm">High (61-100)</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{stats.intentDistribution.high}</span>
+                <div className="flex items-center gap-1 md:gap-2">
+                  <span className="font-medium text-sm">{stats.intentDistribution.high}</span>
                   <span className="text-xs text-muted-foreground">
                     ({totalIntentUsers > 0 ? Math.round((stats.intentDistribution.high / totalIntentUsers) * 100) : 0}%)
                   </span>
@@ -85,11 +93,11 @@ export function BehavioralInsights() {
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-yellow-500" />
-                  <span className="text-sm">Medium (31-60)</span>
+                  <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-yellow-500" />
+                  <span className="text-xs md:text-sm">Medium (31-60)</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{stats.intentDistribution.medium}</span>
+                <div className="flex items-center gap-1 md:gap-2">
+                  <span className="font-medium text-sm">{stats.intentDistribution.medium}</span>
                   <span className="text-xs text-muted-foreground">
                     ({totalIntentUsers > 0 ? Math.round((stats.intentDistribution.medium / totalIntentUsers) * 100) : 0}%)
                   </span>
@@ -97,11 +105,11 @@ export function BehavioralInsights() {
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-red-500" />
-                  <span className="text-sm">Low (0-30)</span>
+                  <div className="w-2.5 h-2.5 md:w-3 md:h-3 rounded-full bg-red-500" />
+                  <span className="text-xs md:text-sm">Low (0-30)</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{stats.intentDistribution.low}</span>
+                <div className="flex items-center gap-1 md:gap-2">
+                  <span className="font-medium text-sm">{stats.intentDistribution.low}</span>
                   <span className="text-xs text-muted-foreground">
                     ({totalIntentUsers > 0 ? Math.round((stats.intentDistribution.low / totalIntentUsers) * 100) : 0}%)
                   </span>
@@ -113,12 +121,12 @@ export function BehavioralInsights() {
 
         {/* Funnel Drop-off */}
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 p-3 md:p-6 md:pb-2">
             <CardTitle className="text-sm font-medium">Funnel Drop-off</CardTitle>
-            <CardDescription>Where users stop in the funnel</CardDescription>
+            <CardDescription className="text-xs">Where users stop in the funnel</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
+          <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
+            <div className="space-y-1.5 md:space-y-2">
               {(Object.keys(funnelLabels) as Array<keyof typeof funnelLabels>).map((stage) => {
                 const Icon = funnelIcons[stage];
                 const count = stats.funnelDropOff[stage];
@@ -127,15 +135,16 @@ export function BehavioralInsights() {
                 
                 return (
                   <div key={stage} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`p-1 rounded ${funnelColors[stage]}`}>
-                        <Icon className="w-3 h-3" />
+                    <div className="flex items-center gap-1.5 md:gap-2">
+                      <div className={`p-0.5 md:p-1 rounded ${funnelColors[stage]}`}>
+                        <Icon className="w-2.5 h-2.5 md:w-3 md:h-3" />
                       </div>
-                      <span className="text-xs">{funnelLabels[stage]}</span>
+                      <span className="text-xs hidden sm:inline">{funnelLabelsFull[stage]}</span>
+                      <span className="text-xs sm:hidden">{funnelLabels[stage]}</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{count}</span>
-                      <div className="w-12 h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="flex items-center gap-1.5 md:gap-2">
+                      <span className="font-medium text-xs md:text-sm">{count}</span>
+                      <div className="w-8 md:w-12 h-1 md:h-1.5 bg-muted rounded-full overflow-hidden">
                         <div 
                           className="h-full bg-primary rounded-full transition-all"
                           style={{ width: `${percentage}%` }}
@@ -150,41 +159,41 @@ export function BehavioralInsights() {
         </Card>
 
         {/* Engagement Metrics */}
-        <Card>
-          <CardHeader className="pb-2">
+        <Card className="md:col-span-2 lg:col-span-1">
+          <CardHeader className="pb-2 p-3 md:p-6 md:pb-2">
             <CardTitle className="text-sm font-medium">Engagement Scores</CardTitle>
-            <CardDescription>Average behavioral metrics</CardDescription>
+            <CardDescription className="text-xs">Average behavioral metrics</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
+          <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
+            <div className="space-y-2 md:space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">Frequency Score</span>
+                  <TrendingUp className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+                  <span className="text-xs md:text-sm">Frequency</span>
                 </div>
-                <span className="font-medium">{stats.avgFrequencyScore}/100</span>
+                <span className="font-medium text-sm">{stats.avgFrequencyScore}/100</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">Depth Score</span>
+                  <Layers className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+                  <span className="text-xs md:text-sm">Depth</span>
                 </div>
-                <span className="font-medium">{stats.avgDepthScore}/100</span>
+                <span className="font-medium text-sm">{stats.avgDepthScore}/100</span>
               </div>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Users className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm">Avg Sessions (30d)</span>
+                  <Users className="w-3.5 h-3.5 md:w-4 md:h-4 text-muted-foreground" />
+                  <span className="text-xs md:text-sm">Sessions (30d)</span>
                 </div>
-                <span className="font-medium">{stats.avgSessionCount}</span>
+                <span className="font-medium text-sm">{stats.avgSessionCount}</span>
               </div>
               <div className="pt-2 border-t border-border">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Identified Profiles</span>
+                  <span className="text-muted-foreground">Identified</span>
                   <span className="font-medium text-green-600">{stats.totalProfilesWithEmail}</span>
                 </div>
                 <div className="flex items-center justify-between text-xs mt-1">
-                  <span className="text-muted-foreground">Anonymous Profiles</span>
+                  <span className="text-muted-foreground">Anonymous</span>
                   <span className="font-medium text-muted-foreground">{stats.totalProfilesAnonymous}</span>
                 </div>
               </div>
@@ -196,18 +205,18 @@ export function BehavioralInsights() {
       {/* Top Categories */}
       {stats.topCategories.length > 0 && (
         <Card>
-          <CardHeader className="pb-2">
+          <CardHeader className="pb-2 p-3 md:p-6 md:pb-2">
             <CardTitle className="text-sm font-medium flex items-center gap-2">
-              <Tag className="w-4 h-4" />
+              <Tag className="w-3.5 h-3.5 md:w-4 md:h-4" />
               Top Categories (30 days)
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
+          <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
+            <div className="flex flex-wrap gap-1.5 md:gap-2">
               {stats.topCategories.map((cat, index) => (
                 <div 
                   key={cat.category}
-                  className="flex items-center gap-1.5 px-2.5 py-1 bg-muted rounded-full text-sm"
+                  className="flex items-center gap-1 md:gap-1.5 px-2 md:px-2.5 py-0.5 md:py-1 bg-muted rounded-full text-xs md:text-sm"
                 >
                   <span className="font-medium">{cat.category}</span>
                   <span className="text-xs text-muted-foreground">({cat.count})</span>

@@ -13,12 +13,12 @@ import {
 } from 'lucide-react';
 
 const segmentIcons: Record<string, React.ReactNode> = {
-  'high_intent_no_purchase': <Target className="w-4 h-4" />,
-  'atc_no_checkout_24h': <ShoppingCart className="w-4 h-4" />,
-  'checkout_abandoned': <CreditCard className="w-4 h-4" />,
-  'category_lover': <Tag className="w-4 h-4" />,
-  'returning_visitor': <Users className="w-4 h-4" />,
-  'at_risk': <AlertTriangle className="w-4 h-4" />,
+  'high_intent_no_purchase': <Target className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'atc_no_checkout_24h': <ShoppingCart className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'checkout_abandoned': <CreditCard className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'category_lover': <Tag className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'returning_visitor': <Users className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'at_risk': <AlertTriangle className="w-3.5 h-3.5 md:w-4 md:h-4" />,
 };
 
 const segmentColors: Record<string, string> = {
@@ -36,14 +36,14 @@ export function SegmentsWidget() {
   if (isLoading) {
     return (
       <Card>
-        <CardHeader>
+        <CardHeader className="p-3 md:p-6">
           <Skeleton className="h-5 w-40" />
           <Skeleton className="h-4 w-60" />
         </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
+        <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
+          <div className="space-y-2 md:space-y-3">
             {[1, 2, 3, 4, 5, 6].map(i => (
-              <Skeleton key={i} className="h-12" />
+              <Skeleton key={i} className="h-10 md:h-12" />
             ))}
           </div>
         </CardContent>
@@ -57,47 +57,47 @@ export function SegmentsWidget() {
 
   return (
     <Card>
-      <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
+      <CardHeader className="pb-2 md:pb-3 p-3 md:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-primary" />
-            <CardTitle className="text-base">Behavioral Segments</CardTitle>
+            <TrendingUp className="w-4 h-4 md:w-5 md:h-5 text-primary" />
+            <CardTitle className="text-sm md:text-base">Behavioral Segments</CardTitle>
           </div>
-          <Badge variant="secondary" className="text-xs">
+          <Badge variant="secondary" className="text-xs self-start sm:self-auto">
             {stats.usersInSegments} in segment
           </Badge>
         </div>
-        <CardDescription>
-          Segmenti calcolati automaticamente dai segnali comportamentali
+        <CardDescription className="text-xs">
+          Segmenti calcolati automaticamente dai segnali
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="p-3 pt-0 md:p-6 md:pt-0">
         {activeSegments.length === 0 ? (
-          <div className="text-center py-6 text-muted-foreground">
-            <Target className="w-8 h-8 mx-auto mb-2 opacity-50" />
-            <p className="text-sm">Nessun utente nei segmenti</p>
-            <p className="text-xs mt-1">I segmenti si popoleranno con più dati comportamentali</p>
+          <div className="text-center py-4 md:py-6 text-muted-foreground">
+            <Target className="w-6 h-6 md:w-8 md:h-8 mx-auto mb-2 opacity-50" />
+            <p className="text-xs md:text-sm">Nessun utente nei segmenti</p>
+            <p className="text-xs mt-1">I segmenti si popoleranno con più dati</p>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-1.5 md:space-y-2">
             {stats.segments.map((segment) => (
               <div
                 key={segment.id}
-                className={`flex items-center justify-between p-3 rounded-lg border ${
+                className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2 md:p-3 rounded-lg border ${
                   segment.count > 0 ? segmentColors[segment.id] : 'bg-muted/30 border-border text-muted-foreground'
                 }`}
               >
-                <div className="flex items-center gap-3">
-                  <div className="opacity-70">
+                <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                  <div className="opacity-70 flex-shrink-0">
                     {segmentIcons[segment.id]}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium">{segment.name}</p>
-                    <p className="text-xs opacity-70">{segment.description}</p>
+                  <div className="min-w-0">
+                    <p className="text-xs md:text-sm font-medium truncate">{segment.name}</p>
+                    <p className="text-xs opacity-70 truncate hidden sm:block">{segment.description}</p>
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-lg font-bold">{segment.count}</p>
+                <div className="flex items-center justify-between sm:justify-end gap-2 sm:text-right flex-shrink-0">
+                  <p className="text-base md:text-lg font-bold">{segment.count}</p>
                   <p className="text-xs opacity-70">{segment.percentage}%</p>
                 </div>
               </div>

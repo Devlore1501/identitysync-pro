@@ -14,12 +14,15 @@ import {
   ChevronDown,
   Building2,
   Plus,
-  FileText
+  FileText,
+  Menu,
+  X
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,10 +54,12 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, profile, signOut } = useAuth();
   const { workspaces, currentWorkspace, setCurrentWorkspace } = useWorkspace();
+  const isMobile = useIsMobile();
 
   const handleSignOut = async () => {
     await signOut();
@@ -65,13 +70,30 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
     ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
     : user?.email?.[0].toUpperCase() || 'U';
 
+  const handleNavClick = (href: string) => {
+    navigate(href);
+    if (isMobile) {
+      setMobileMenuOpen(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background flex">
+      {/* Mobile overlay */}
+      {isMobile && mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-30 md:hidden"
+          onClick={() => setMobileMenuOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside 
         className={cn(
           "fixed left-0 top-0 bottom-0 z-40 flex flex-col bg-sidebar border-r border-sidebar-border transition-all duration-300",
-          collapsed ? "w-16" : "w-64"
+          isMobile 
+            ? (mobileMenuOpen ? "translate-x-0 w-64" : "-translate-x-full w-64")
+            : (collapsed ? "w-16" : "w-64")
         )}
       >
         {/* Logo */}
@@ -80,12 +102,23 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary to-accent flex items-center justify-center flex-shrink-0">
               <span className="text-primary-foreground font-bold text-lg">S</span>
             </div>
-            {!collapsed && <span className="font-semibold">SignalForge</span>}
+            {(!collapsed || isMobile) && <span className="font-semibold">SignalForge</span>}
           </Link>
+          {/* Mobile close button */}
+          {isMobile && (
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="md:hidden"
+              onClick={() => setMobileMenuOpen(false)}
+            >
+              <X className="w-5 h-5" />
+            </Button>
+          )}
         </div>
 
         {/* Workspace Selector */}
-        {!collapsed && currentWorkspace && (
+        {(!collapsed || isMobile) && currentWorkspace && (
           <div className="px-2 py-3 border-b border-sidebar-border">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -119,7 +152,10 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
                   className="cursor-pointer"
-                  onClick={() => navigate("/dashboard/settings?tab=sites")}
+                  onClick={() => {
+                    navigate("/dashboard/settings?tab=sites");
+                    if (isMobile) setMobileMenuOpen(false);
+                  }}
                 >
                   <Plus className="w-4 h-4 mr-2" />
                   Add workspace
@@ -138,10 +174,10 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
               
               return (
                 <li key={item.href}>
-                  <Link
-                    to={item.href}
+                  <button
+                    onClick={() => handleNavClick(item.href)}
                     className={cn(
-                      "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                       isActive 
                         ? "bg-sidebar-accent text-sidebar-accent-foreground" 
                         : "text-sidebar-foreground hover:bg-sidebar-accent/50"
@@ -151,42 +187,55 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                       "w-5 h-5 flex-shrink-0",
                       isActive && "text-primary"
                     )} />
-                    {!collapsed && <span>{item.label}</span>}
-                  </Link>
+                    {(!collapsed || isMobile) && <span>{item.label}</span>}
+                  </button>
                 </li>
               );
             })}
           </ul>
         </nav>
 
-        {/* Bottom section */}
-        <div className="p-2 border-t border-sidebar-border">
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className="flex items-center justify-center w-full p-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
-          >
-            {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-          </button>
-        </div>
+        {/* Bottom section - hide on mobile */}
+        {!isMobile && (
+          <div className="p-2 border-t border-sidebar-border">
+            <button
+              onClick={() => setCollapsed(!collapsed)}
+              className="flex items-center justify-center w-full p-2 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+            >
+              {collapsed ? <ChevronRight className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
+            </button>
+          </div>
+        )}
       </aside>
 
       {/* Main content */}
       <div className={cn(
         "flex-1 transition-all duration-300",
-        collapsed ? "ml-16" : "ml-64"
+        isMobile ? "ml-0" : (collapsed ? "ml-16" : "ml-64")
       )}>
         {/* Top bar */}
-        <header className="h-16 border-b border-border flex items-center justify-between px-6 bg-card/50 backdrop-blur-sm sticky top-0 z-30">
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold">
+        <header className="h-14 md:h-16 border-b border-border flex items-center justify-between px-3 md:px-6 bg-card/50 backdrop-blur-sm sticky top-0 z-30">
+          <div className="flex items-center gap-2 md:gap-4">
+            {/* Mobile hamburger */}
+            {isMobile && (
+              <Button 
+                variant="ghost" 
+                size="icon"
+                className="md:hidden"
+                onClick={() => setMobileMenuOpen(true)}
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
+            )}
+            <h1 className="text-base md:text-lg font-semibold truncate">
               {navItems.find(item => 
                 location.pathname === item.href || 
                 (item.href !== "/dashboard" && location.pathname.startsWith(item.href))
               )?.label || "Dashboard"}
             </h1>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="icon">
+          <div className="flex items-center gap-1 md:gap-2">
+            <Button variant="ghost" size="icon" className="hidden md:inline-flex">
               <HelpCircle className="w-5 h-5" />
             </Button>
             <Button variant="ghost" size="icon">
@@ -196,9 +245,9 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="relative h-8 w-8 rounded-full ml-2">
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full ml-1 md:ml-2">
                   <Avatar className="h-8 w-8">
-                    <AvatarFallback className="bg-primary/20 text-primary">
+                    <AvatarFallback className="bg-primary/20 text-primary text-xs">
                       {userInitials}
                     </AvatarFallback>
                   </Avatar>
@@ -227,7 +276,7 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
         </header>
 
         {/* Page content */}
-        <main className="p-6">
+        <main className="p-3 md:p-6">
           {children}
         </main>
       </div>
