@@ -172,12 +172,18 @@ async function processEventOptimized(
 }
 
 Deno.serve(async (req) => {
+  console.log('=== COLLECT FUNCTION CALLED ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
+    console.log('CORS preflight request');
     return new Response(null, { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
+    console.log('Method not allowed:', req.method);
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -215,9 +221,16 @@ Deno.serve(async (req) => {
 
     // Parse payload
     const payload: CollectPayload = await req.json();
+    
+    console.log('=== COLLECT RECEIVED EVENT ===');
+    console.log('Event name:', payload.event);
+    console.log('Anonymous ID:', payload.context?.anonymous_id || 'not provided');
+    console.log('Session ID:', payload.context?.session_id || 'not provided');
+    console.log('Properties:', JSON.stringify(payload.properties || {}));
 
     // Validate required fields
     if (!payload.event) {
+      console.log('ERROR: Missing event field');
       return new Response(
         JSON.stringify({ error: 'Missing required field: event' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

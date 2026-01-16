@@ -47,3 +47,9 @@ verify_jwt = false
 
 [functions.seed-test-data]
 verify_jwt = false
+
+[functions.test-endpoints]
+verify_jwt = false
+
+[functions.export-high-intent]
+verify_jwt = false
