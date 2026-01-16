@@ -165,25 +165,40 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Actually delete the profile from Klaviyo
+        // Create a Data Privacy Deletion Job (Klaviyo doesn't support direct DELETE)
         const deleteResponse = await fetch(
-          `https://a.klaviyo.com/api/profiles/${klaviyoProfileId}`,
+          'https://a.klaviyo.com/api/data-privacy-deletion-jobs/',
           {
-            method: 'DELETE',
+            method: 'POST',
             headers: {
               'Authorization': `Klaviyo-API-Key ${apiKey}`,
-              'revision': '2024-02-15'
-            }
+              'revision': '2024-02-15',
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+              data: {
+                type: 'data-privacy-deletion-job',
+                attributes: {
+                  profile: {
+                    data: {
+                      type: 'profile',
+                      id: klaviyoProfileId
+                    }
+                  }
+                }
+              }
+            })
           }
         );
 
-        if (deleteResponse.ok || deleteResponse.status === 204) {
+        if (deleteResponse.status === 202 || deleteResponse.ok) {
           result.deleted = true;
           deletedCount++;
-          console.log(`Deleted Klaviyo profile ${klaviyoProfileId} for user ${userId}`);
+          console.log(`Deletion job created for Klaviyo profile ${klaviyoProfileId} (user ${userId})`);
         } else {
           const errorText = await deleteResponse.text();
-          result.error = `Delete failed: ${deleteResponse.status} - ${errorText}`;
+          result.error = `Deletion job failed: ${deleteResponse.status} - ${errorText}`;
           errorCount++;
         }
 
