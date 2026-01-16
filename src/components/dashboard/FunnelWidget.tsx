@@ -3,12 +3,12 @@ import { TrendingDown, TrendingUp, Users, Eye, ShoppingCart, CreditCard, Package
 import { Skeleton } from "@/components/ui/skeleton";
 
 const stepIcons: Record<string, React.ReactNode> = {
-  'Visitatori': <Eye className="w-4 h-4" />,
-  'Collezioni': <Users className="w-4 h-4" />,
-  'Prodotti': <Package className="w-4 h-4" />,
-  'Carrello': <ShoppingCart className="w-4 h-4" />,
-  'Checkout': <CreditCard className="w-4 h-4" />,
-  'Acquisti': <TrendingUp className="w-4 h-4" />,
+  'Visitatori': <Eye className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'Collezioni': <Users className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'Prodotti': <Package className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'Carrello': <ShoppingCart className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'Checkout': <CreditCard className="w-3.5 h-3.5 md:w-4 md:h-4" />,
+  'Acquisti': <TrendingUp className="w-3.5 h-3.5 md:w-4 md:h-4" />,
 };
 
 export function FunnelWidget() {
@@ -17,10 +17,10 @@ export function FunnelWidget() {
   if (isLoading) {
     return (
       <div className="metric-card">
-        <h3 className="text-lg font-semibold mb-4">Funnel Conversione</h3>
-        <div className="space-y-3">
+        <h3 className="text-base md:text-lg font-semibold mb-3 md:mb-4">Funnel Conversione</h3>
+        <div className="space-y-2 md:space-y-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} className="h-12 w-full" />
+            <Skeleton key={i} className="h-10 md:h-12 w-full" />
           ))}
         </div>
       </div>
@@ -31,19 +31,19 @@ export function FunnelWidget() {
 
   return (
     <div className="metric-card">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold">Funnel Conversione</h3>
+      <div className="flex items-center justify-between mb-3 md:mb-4">
+        <h3 className="text-base md:text-lg font-semibold">Funnel Conversione</h3>
         <span className="text-xs text-muted-foreground">{funnelStats?.period}</span>
       </div>
 
-      <div className="space-y-2">
+      <div className="space-y-1.5 md:space-y-2">
         {funnelStats?.steps.map((step, index) => {
           const widthPercent = (step.count / maxCount) * 100;
           const isLast = index === (funnelStats?.steps.length || 0) - 1;
 
           return (
             <div key={step.name} className="relative">
-              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 relative overflow-hidden">
+              <div className="flex items-center gap-2 md:gap-3 p-2 md:p-3 rounded-lg bg-muted/30 relative overflow-hidden">
                 {/* Background bar */}
                 <div
                   className="absolute inset-y-0 left-0 bg-primary/10 transition-all duration-500"
@@ -51,28 +51,28 @@ export function FunnelWidget() {
                 />
                 
                 {/* Content */}
-                <div className="relative flex items-center gap-3 flex-1 z-10">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-full bg-primary/20 text-primary">
-                    {stepIcons[step.name] || <Eye className="w-4 h-4" />}
+                <div className="relative flex items-center gap-2 md:gap-3 flex-1 z-10">
+                  <div className="flex items-center justify-center w-6 h-6 md:w-8 md:h-8 rounded-full bg-primary/20 text-primary flex-shrink-0">
+                    {stepIcons[step.name] || <Eye className="w-3.5 h-3.5 md:w-4 md:h-4" />}
                   </div>
                   
-                  <div className="flex-1">
-                    <div className="font-medium text-sm">{step.name}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-xs md:text-sm truncate">{step.name}</div>
                     <div className="text-xs text-muted-foreground">
-                      {step.count.toLocaleString()} eventi
+                      {step.count.toLocaleString()} <span className="hidden sm:inline">eventi</span>
                     </div>
                   </div>
 
-                  <div className="text-right">
+                  <div className="text-right flex-shrink-0">
                     {index > 0 && (
-                      <div className={`text-sm font-medium flex items-center gap-1 ${
+                      <div className={`text-xs md:text-sm font-medium flex items-center gap-0.5 md:gap-1 ${
                         step.conversionRate >= 50 ? 'text-green-600' : 
                         step.conversionRate >= 20 ? 'text-yellow-600' : 'text-red-500'
                       }`}>
                         {step.conversionRate}%
                         {step.dropOff > 0 && (
-                          <span className="text-xs text-muted-foreground flex items-center">
-                            <TrendingDown className="w-3 h-3 mr-0.5" />
+                          <span className="text-xs text-muted-foreground hidden sm:flex items-center">
+                            <TrendingDown className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5" />
                             -{step.dropOff}%
                           </span>
                         )}
@@ -84,8 +84,8 @@ export function FunnelWidget() {
 
               {/* Connector line */}
               {!isLast && (
-                <div className="flex justify-center py-1">
-                  <div className="w-0.5 h-2 bg-border" />
+                <div className="flex justify-center py-0.5 md:py-1">
+                  <div className="w-0.5 h-1.5 md:h-2 bg-border" />
                 </div>
               )}
             </div>
@@ -94,14 +94,14 @@ export function FunnelWidget() {
       </div>
 
       {/* Overall conversion */}
-      <div className="mt-4 pt-4 border-t border-border">
+      <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-border">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground">Conversione Totale</span>
-          <span className="text-lg font-bold text-primary">
+          <span className="text-xs md:text-sm text-muted-foreground">Conversione Totale</span>
+          <span className="text-base md:text-lg font-bold text-primary">
             {funnelStats?.overallConversion}%
           </span>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">
+        <p className="text-xs text-muted-foreground mt-0.5 md:mt-1">
           Da visita a acquisto
         </p>
       </div>

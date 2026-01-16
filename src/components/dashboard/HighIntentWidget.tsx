@@ -30,6 +30,13 @@ const stageLabels: Record<string, string> = {
   browsing: "Active Browser",
 };
 
+const stageLabelsShort: Record<string, string> = {
+  checkout: "Checkout",
+  cart: "Cart",
+  engaged: "Engaged",
+  browsing: "Browse",
+};
+
 export const HighIntentWidget = () => {
   const { data: users, isLoading } = useHighIntentUsers();
   const { currentWorkspace } = useWorkspace();
@@ -88,7 +95,6 @@ export const HighIntentWidget = () => {
       if (error) throw error;
 
       toast.success(`Creati ${data.usersCreated} utenti e ${data.eventsCreated} eventi di test`);
-      // Refresh the high intent users query
       queryClient.invalidateQueries({ queryKey: ['high-intent-users'] });
     } catch (err) {
       console.error('Seed error:', err);
@@ -100,8 +106,8 @@ export const HighIntentWidget = () => {
 
   if (isLoading) {
     return (
-      <div className="metric-card flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      <div className="metric-card flex items-center justify-center py-8 md:py-12">
+        <Loader2 className="w-5 h-5 md:w-6 md:h-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -110,70 +116,70 @@ export const HighIntentWidget = () => {
 
   return (
     <div className="metric-card">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4 md:mb-6">
         <div>
-          <h3 className="text-lg font-semibold">High Intent Users</h3>
-          <p className="text-sm text-muted-foreground">Ready for Klaviyo campaigns</p>
+          <h3 className="text-base md:text-lg font-semibold">High Intent Users</h3>
+          <p className="text-xs md:text-sm text-muted-foreground">Ready for Klaviyo</p>
         </div>
-        <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
-          <Flame className="w-5 h-5 text-orange-500" />
+        <div className="w-8 h-8 md:w-10 md:h-10 rounded-lg bg-orange-500/10 flex items-center justify-center">
+          <Flame className="w-4 h-4 md:w-5 md:h-5 text-orange-500" />
         </div>
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-3 mb-6">
-        <div className="text-center p-2 rounded-lg bg-muted/30">
-          <div className="text-xl font-bold text-orange-400">{highIntentUsers.length}</div>
+      <div className="grid grid-cols-3 gap-2 md:gap-3 mb-4 md:mb-6">
+        <div className="text-center p-1.5 md:p-2 rounded-lg bg-muted/30">
+          <div className="text-lg md:text-xl font-bold text-orange-400">{highIntentUsers.length}</div>
           <div className="text-xs text-muted-foreground">Hot Leads</div>
         </div>
-        <div className="text-center p-2 rounded-lg bg-muted/30">
-          <div className="text-xl font-bold text-red-400">
+        <div className="text-center p-1.5 md:p-2 rounded-lg bg-muted/30">
+          <div className="text-lg md:text-xl font-bold text-red-400">
             {highIntentUsers.filter(u => u.dropOffStage === 'checkout').length}
           </div>
-          <div className="text-xs text-muted-foreground">Checkout Drop</div>
+          <div className="text-xs text-muted-foreground">Checkout</div>
         </div>
-        <div className="text-center p-2 rounded-lg bg-muted/30">
-          <div className="text-xl font-bold text-yellow-400">
+        <div className="text-center p-1.5 md:p-2 rounded-lg bg-muted/30">
+          <div className="text-lg md:text-xl font-bold text-yellow-400">
             {highIntentUsers.filter(u => u.dropOffStage === 'cart').length}
           </div>
-          <div className="text-xs text-muted-foreground">Cart Drop</div>
+          <div className="text-xs text-muted-foreground">Cart</div>
         </div>
       </div>
 
       {/* User list */}
-      <div className="space-y-3">
+      <div className="space-y-2 md:space-y-3">
         <div className="flex items-center justify-between">
-          <h4 className="text-sm font-medium text-muted-foreground">Top Leads</h4>
+          <h4 className="text-xs md:text-sm font-medium text-muted-foreground">Top Leads</h4>
           {highIntentUsers.length > 5 && (
             <span className="text-xs text-muted-foreground">
-              Showing 5 of {highIntentUsers.length}
+              5 of {highIntentUsers.length}
             </span>
           )}
         </div>
         
         {highIntentUsers.length > 0 ? (
-          <div className="space-y-2">
+          <div className="space-y-1.5 md:space-y-2">
             {highIntentUsers.slice(0, 5).map((user, index) => {
               const StageIcon = stageIcons[user.dropOffStage] || Eye;
               return (
                 <div
                   key={user.id}
-                  className="p-3 rounded-lg bg-muted/20 border border-border hover:bg-muted/30 transition-colors animate-fade-in"
+                  className="p-2 md:p-3 rounded-lg bg-muted/20 border border-border hover:bg-muted/30 transition-colors animate-fade-in"
                   style={{ animationDelay: `${index * 0.05}s` }}
                 >
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2 md:gap-3">
+                    <div className="flex items-center gap-2 md:gap-3 min-w-0 flex-1">
                       {/* Intent Score Badge */}
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <div className={`flex items-center justify-center w-10 h-10 rounded-full shrink-0 ${
+                          <div className={`flex items-center justify-center w-8 h-8 md:w-10 md:h-10 rounded-full shrink-0 ${
                             user.intentScore >= 70 
                               ? 'bg-red-500/20 text-red-400' 
                               : user.intentScore >= 50 
                                 ? 'bg-orange-500/20 text-orange-400'
                                 : 'bg-yellow-500/20 text-yellow-400'
                           }`}>
-                            <span className="text-sm font-bold">{user.intentScore}</span>
+                            <span className="text-xs md:text-sm font-bold">{user.intentScore}</span>
                           </div>
                         </TooltipTrigger>
                         <TooltipContent>
@@ -183,13 +189,13 @@ export const HighIntentWidget = () => {
 
                       {/* User Info */}
                       <div className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate">
-                          {user.email ? maskEmail(user.email) : 'Anonymous User'}
+                        <div className="text-xs md:text-sm font-medium truncate">
+                          {user.email ? maskEmail(user.email) : 'Anonymous'}
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{user.eventsCount} events</span>
-                          <span>•</span>
-                          <span>{user.lastSeenAt}</span>
+                        <div className="flex items-center gap-1 md:gap-2 text-xs text-muted-foreground">
+                          <span>{user.eventsCount} evt</span>
+                          <span className="hidden sm:inline">•</span>
+                          <span className="hidden sm:inline">{user.lastSeenAt}</span>
                         </div>
                       </div>
                     </div>
@@ -197,10 +203,11 @@ export const HighIntentWidget = () => {
                     {/* Drop-off Stage Badge */}
                     <Badge 
                       variant="outline" 
-                      className={`shrink-0 text-xs ${stageColors[user.dropOffStage]}`}
+                      className={`shrink-0 text-xs px-1.5 md:px-2 ${stageColors[user.dropOffStage]}`}
                     >
-                      <StageIcon className="w-3 h-3 mr-1" />
-                      {stageLabels[user.dropOffStage]}
+                      <StageIcon className="w-2.5 h-2.5 md:w-3 md:h-3 mr-0.5 md:mr-1" />
+                      <span className="hidden sm:inline">{stageLabels[user.dropOffStage]}</span>
+                      <span className="sm:hidden">{stageLabelsShort[user.dropOffStage]}</span>
                     </Badge>
                   </div>
                 </div>
@@ -208,10 +215,10 @@ export const HighIntentWidget = () => {
             })}
           </div>
         ) : (
-          <div className="text-center py-8 text-muted-foreground">
-            <Flame className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <p className="text-sm">No high intent users yet</p>
-            <p className="text-xs mt-1 mb-4">Users with intent score &gt; 5 who haven't purchased will appear here</p>
+          <div className="text-center py-6 md:py-8 text-muted-foreground">
+            <Flame className="w-6 h-6 md:w-8 md:h-8 mx-auto mb-2 opacity-30" />
+            <p className="text-xs md:text-sm">No high intent users yet</p>
+            <p className="text-xs mt-1 mb-3 md:mb-4">Users with intent &gt; 5 will appear here</p>
             <Button 
               variant="outline" 
               size="sm" 
@@ -219,32 +226,33 @@ export const HighIntentWidget = () => {
               disabled={isSeeding}
             >
               {isSeeding ? (
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 animate-spin" />
               ) : (
-                <Plus className="w-4 h-4 mr-2" />
+                <Plus className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2" />
               )}
-              {isSeeding ? "Generazione..." : "Genera Dati Test"}
+              {isSeeding ? "Generazione..." : "Genera Test"}
             </Button>
           </div>
         )}
       </div>
 
       {/* Action buttons */}
-      <div className="mt-4 pt-4 border-t border-border space-y-2">
+      <div className="mt-3 md:mt-4 pt-3 md:pt-4 border-t border-border space-y-2">
         <div className="flex gap-2">
           <Button 
             variant="outline" 
             size="sm"
-            className="flex-1"
+            className="flex-1 text-xs md:text-sm"
             onClick={handleSeedTestData}
             disabled={isSeeding}
           >
             {isSeeding ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2 animate-spin" />
             ) : (
-              <Plus className="w-4 h-4 mr-2" />
+              <Plus className="w-3.5 h-3.5 md:w-4 md:h-4 mr-1.5 md:mr-2" />
             )}
-            {isSeeding ? "Generazione..." : "Genera Test"}
+            <span className="hidden sm:inline">{isSeeding ? "Generazione..." : "Genera Test"}</span>
+            <span className="sm:hidden">{isSeeding ? "..." : "Test"}</span>
           </Button>
           <Button 
             variant="outline" 
@@ -252,33 +260,34 @@ export const HighIntentWidget = () => {
             onClick={() => queryClient.invalidateQueries({ queryKey: ['high-intent-users'] })}
             disabled={isLoading}
           >
-            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-3.5 h-3.5 md:w-4 md:h-4 ${isLoading ? 'animate-spin' : ''}`} />
           </Button>
         </div>
         
         {highIntentUsers.length > 0 && (
           <Button 
             variant="ghost" 
-            className="w-full justify-between text-sm" 
+            className="w-full justify-between text-xs md:text-sm" 
             onClick={handleExportToKlaviyo}
             disabled={isExporting}
           >
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 md:gap-2">
               {exportResult ? (
                 <>
-                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  <CheckCircle className="w-3.5 h-3.5 md:w-4 md:h-4 text-green-500" />
                   {exportResult.exported} esportati
                 </>
               ) : isExporting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Esportazione...
+                  <Loader2 className="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin" />
+                  <span className="hidden sm:inline">Esportazione...</span>
+                  <span className="sm:hidden">...</span>
                 </>
               ) : (
-                "Export to Klaviyo"
+                <span>Export to Klaviyo</span>
               )}
             </span>
-            {!isExporting && !exportResult && <ArrowRight className="w-4 h-4" />}
+            {!isExporting && !exportResult && <ArrowRight className="w-3.5 h-3.5 md:w-4 md:h-4" />}
           </Button>
         )}
       </div>
