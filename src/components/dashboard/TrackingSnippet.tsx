@@ -5,14 +5,14 @@ import { Copy, Check, Code } from "lucide-react";
 import { toast } from "sonner";
 
 interface TrackingSnippetProps {
-  workspaceId: string;
+  apiKey?: string;
 }
 
-export function TrackingSnippet({ workspaceId }: TrackingSnippetProps) {
+export function TrackingSnippet({ apiKey: providedApiKey }: TrackingSnippetProps) {
   const { apiKeys } = useApiKeys();
   const [copied, setCopied] = useState(false);
   
-  const apiKey = apiKeys[0]?.key_prefix || 'YOUR_API_KEY';
+  const apiKey = providedApiKey || apiKeys[0]?.key_prefix || 'YOUR_API_KEY';
   const collectUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/collect`;
   const identifyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/identify`;
 
