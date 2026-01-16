@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { useAuth } from "@/contexts/AuthContext";
+import { useAccount } from "@/hooks/useAccount";
 import { supabase } from "@/integrations/supabase/client";
 import { canAddWorkspace, getPlanLimits, getPlanById } from "@/lib/plans";
 import { toast } from "sonner";
@@ -51,6 +52,7 @@ interface WorkspaceManagerProps {
 export function WorkspaceManager({ onWorkspaceChange }: WorkspaceManagerProps) {
   const { workspaces, currentWorkspace, setCurrentWorkspace, refetch } = useWorkspace();
   const { profile } = useAuth();
+  const { data: account } = useAccount();
   
   const [isCreating, setIsCreating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -62,8 +64,8 @@ export function WorkspaceManager({ onWorkspaceChange }: WorkspaceManagerProps) {
     platform: "shopify",
   });
 
-  // Get account plan (default to 'starter' if not set)
-  const accountPlan = "starter"; // In production, fetch from accounts table
+  // Get account plan from database (default to 'pro' for unlimited)
+  const accountPlan = account?.plan || "pro";
   const limits = getPlanLimits(accountPlan);
   const planConfig = getPlanById(accountPlan);
   const canAdd = canAddWorkspace(accountPlan, workspaces.length);
