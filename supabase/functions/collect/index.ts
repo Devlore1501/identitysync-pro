@@ -22,6 +22,11 @@ interface CollectPayload {
       term?: string;
       content?: string;
     };
+    traits?: {
+      email?: string;
+      phone?: string;
+      customer_id?: string;
+    };
   };
   timestamp?: string;
   consent?: {
@@ -30,332 +35,140 @@ interface CollectPayload {
   };
 }
 
-// Generate dedupe key from event properties
-function generateDedupeKey(workspaceId: string, event: string, anonymousId: string | null, properties: Record<string, unknown>, timestamp: string): string {
-  const productId = properties?.product_id ?? '';
-  const parts = [
-    workspaceId,
-    event,
-    anonymousId || '',
-    String(productId),
-    timestamp,
-  ];
-  return parts.join('::');
+// Map common event names to standardized event types
+function mapEventType(eventName: string): string {
+  const eventTypeMap: Record<string, string> = {
+    'Page View': 'page',
+    'page_view': 'page',
+    'View Item': 'product',
+    'view_item': 'product',
+    'Product Viewed': 'product',
+    'Add to Cart': 'cart',
+    'add_to_cart': 'cart',
+    'Product Added': 'cart',
+    'Cart Viewed': 'cart',
+    'Begin Checkout': 'checkout',
+    'begin_checkout': 'checkout',
+    'Started Checkout': 'checkout',
+    'Checkout Started': 'checkout',
+    'Purchase': 'order',
+    'purchase': 'order',
+    'Placed Order': 'order',
+    'Order Completed': 'order',
+  };
+  return eventTypeMap[eventName] || 'custom';
 }
 
-// Process a single raw event inline
+// OPTIMIZED: Process event using database functions (1-2 queries instead of 8+)
 // deno-lint-ignore no-explicit-any
-async function processEventInline(
+async function processEventOptimized(
   supabase: any,
   workspaceId: string,
   payload: CollectPayload,
   source: string,
   ipAddress: string,
   userAgent: string
-): Promise<{ eventId: string | null; syncJobsCreated: number }> {
+): Promise<{ eventId: string | null; unifiedUserId: string | null; isDuplicate: boolean; syncJobsCreated: number }> {
   const context = payload.context || {};
   const anonymousId = context.anonymous_id || null;
   const sessionId = context.session_id || null;
   const timestamp = payload.timestamp || new Date().toISOString();
-
-  // Find or resolve unified user
-  let unifiedUserId: string | null = null;
-
-  if (anonymousId) {
-    // Try to find existing identity
-    const { data: existingIdentity } = await supabase
-      .from('identities')
-      .select('unified_user_id')
-      .eq('workspace_id', workspaceId)
-      .eq('identity_type', 'anonymous_id')
-      .eq('identity_value', anonymousId)
-      .single();
-
-    if (existingIdentity) {
-      unifiedUserId = existingIdentity.unified_user_id;
-      
-      // Update last_seen_at
-      await supabase
-        .from('users_unified')
-        .update({ last_seen_at: new Date().toISOString() })
-        .eq('id', unifiedUserId);
-    } else {
-      // Create new unified user
-      const { data: newUser } = await supabase
-        .from('users_unified')
-        .insert({
-          workspace_id: workspaceId,
-          anonymous_ids: [anonymousId],
-        })
-        .select('id')
-        .single();
-
-      if (newUser) {
-        unifiedUserId = newUser.id;
-        
-        // Create identity record
-        await supabase
-          .from('identities')
-          .insert({
-            workspace_id: workspaceId,
-            unified_user_id: unifiedUserId,
-            identity_type: 'anonymous_id',
-            identity_value: anonymousId,
-            source: source,
-          });
-      }
-    }
-  }
-
-  // Map common event types
+  
+  // Extract identity info from context.traits if available
+  const email = context.traits?.email || null;
+  const phone = context.traits?.phone || null;
+  const customerId = context.traits?.customer_id || null;
+  
+  // Map event type
   const eventName = payload.event;
-  const eventTypeMap: Record<string, string> = {
-    'Page View': 'page_view',
-    'page_view': 'page_view',
-    'View Item': 'view_item',
-    'view_item': 'view_item',
-    'Add to Cart': 'add_to_cart',
-    'add_to_cart': 'add_to_cart',
-    'Begin Checkout': 'begin_checkout',
-    'begin_checkout': 'begin_checkout',
-    'Purchase': 'purchase',
-    'purchase': 'purchase',
-    'Started Checkout': 'begin_checkout',
-    'Placed Order': 'purchase',
-  };
-  const eventType = eventTypeMap[eventName] || 'custom';
-
-  // Generate dedupe key
-  const dedupeKey = generateDedupeKey(workspaceId, eventName, anonymousId, payload.properties || {}, timestamp);
-
-  // Check for duplicate
-  const { data: existingEvent } = await supabase
-    .from('events')
-    .select('id')
-    .eq('workspace_id', workspaceId)
-    .eq('dedupe_key', dedupeKey)
-    .single();
-
-  if (existingEvent) {
-    return { eventId: existingEvent.id, syncJobsCreated: 0 };
-  }
-
-  // Insert processed event directly
-  const { data: insertedEvent, error: insertError } = await supabase
-    .from('events')
-    .insert({
-      workspace_id: workspaceId,
-      unified_user_id: unifiedUserId,
-      event_type: eventType,
-      event_name: eventName,
-      properties: payload.properties || {},
-      context: {
-        ...context,
-        ip_address: ipAddress,
-        user_agent: userAgent,
-      },
-      anonymous_id: anonymousId,
-      session_id: sessionId,
-      source: source,
-      status: 'processed',
-      dedupe_key: dedupeKey,
-      consent_state: payload.consent || null,
-      event_time: timestamp,
-      processed_at: new Date().toISOString(),
-    })
-    .select('id')
-    .single();
-
-  if (insertError || !insertedEvent) {
-    console.error('Error inserting event:', insertError);
-    return { eventId: null, syncJobsCreated: 0 };
-  }
-
-  // Queue sync jobs for enabled destinations
-  let syncJobsCreated = 0;
-  const { data: destinations } = await supabase
-    .from('destinations')
-    .select('id')
-    .eq('workspace_id', workspaceId)
-    .eq('enabled', true);
-
-  if (destinations && destinations.length > 0) {
-    const syncJobs = destinations.map((dest: { id: string }) => ({
-      workspace_id: workspaceId,
-      destination_id: dest.id,
-      unified_user_id: unifiedUserId,
-      event_id: insertedEvent.id,
-      job_type: 'event_track',
-      payload: {},
-    }));
-
-    const { error: syncError } = await supabase.from('sync_jobs').insert(syncJobs);
-    if (!syncError) {
-      syncJobsCreated = syncJobs.length;
-    }
-  }
-
-  // Update computed traits for the unified user
-  if (unifiedUserId) {
-    await updateComputedTraits(supabase, unifiedUserId, eventType, eventName, payload.properties || {});
-  }
-
-  // Track billing usage
-  await incrementBillingUsage(supabase, workspaceId);
-
-  return { eventId: insertedEvent.id, syncJobsCreated };
-}
-
-// Increment billing usage counter for the current period
-// deno-lint-ignore no-explicit-any
-async function incrementBillingUsage(supabase: any, workspaceId: string): Promise<void> {
-  try {
-    // Get workspace to find account_id
-    const { data: workspace } = await supabase
-      .from('workspaces')
-      .select('account_id')
-      .eq('id', workspaceId)
-      .single();
-
-    if (!workspace) return;
-
-    const now = new Date();
-    const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-    const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-
-    // Try to update existing record
-    const { data: existing } = await supabase
-      .from('billing_usage')
-      .select('id, events_count')
-      .eq('account_id', workspace.account_id)
-      .eq('period_start', periodStart)
-      .single();
-
-    if (existing) {
-      await supabase
-        .from('billing_usage')
-        .update({ 
-          events_count: existing.events_count + 1,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existing.id);
-    } else {
-      await supabase
-        .from('billing_usage')
-        .insert({
-          account_id: workspace.account_id,
-          workspace_id: workspaceId,
-          period_start: periodStart,
-          period_end: periodEnd,
-          events_count: 1,
-        });
-    }
-  } catch (error) {
-    console.error('Error tracking billing usage:', error);
-    // Don't fail the request if billing tracking fails
-  }
-}
-
-// Calculate and update computed traits based on event
-// deno-lint-ignore no-explicit-any
-async function updateComputedTraits(
-  supabase: any,
-  unifiedUserId: string,
-  eventType: string,
-  eventName: string,
-  properties: Record<string, unknown>
-): Promise<void> {
-  // Intent score weights
-  const scoreMap: Record<string, number> = {
-    'page_view': 1,
-    'view_item': 3,
-    'add_to_cart': 5,
-    'begin_checkout': 8,
-    'purchase': 10,
-    'custom': 1,
+  const eventType = mapEventType(eventName);
+  
+  // Build context with IP and user agent
+  const enrichedContext = {
+    ...context,
+    ip_address: ipAddress,
+    user_agent: userAgent,
   };
 
-  const scoreIncrement = scoreMap[eventType] || 1;
+  // SINGLE QUERY: Process event using optimized database function
+  // This replaces 8+ separate queries with 1 RPC call
+  const { data: result, error: processError } = await supabase.rpc('process_event_fast', {
+    p_workspace_id: workspaceId,
+    p_event_type: eventType,
+    p_event_name: eventName,
+    p_properties: payload.properties || {},
+    p_context: enrichedContext,
+    p_anonymous_id: anonymousId,
+    p_email: email,
+    p_phone: phone,
+    p_customer_id: customerId,
+    p_source: source,
+    p_session_id: sessionId,
+    p_consent_state: payload.consent || null,
+    p_event_time: timestamp,
+  });
 
-  // Get current user data
-  const { data: user } = await supabase
-    .from('users_unified')
-    .select('computed, first_seen_at')
-    .eq('id', unifiedUserId)
-    .single();
-
-  const currentComputed = (user?.computed as Record<string, unknown>) || {};
-  const currentScore = (currentComputed.intent_score as number) || 0;
-  
-  // Calculate new intent score with time decay
-  const lastActivityTime = currentComputed.last_activity_at 
-    ? new Date(currentComputed.last_activity_at as string).getTime() 
-    : Date.now();
-  const hoursSinceLastActivity = (Date.now() - lastActivityTime) / (1000 * 60 * 60);
-  const decayFactor = Math.max(0.5, 1 - (hoursSinceLastActivity / 168)); // Decay over 1 week
-  const decayedScore = currentScore * decayFactor;
-  const newScore = Math.min(Math.round(decayedScore + scoreIncrement), 100);
-
-  // Update category counts for top_category
-  const categoryName = (properties?.category as string) || 
-                       (properties?.product_category as string) || 
-                       (properties?.item_category as string);
-  const categoryCountsRaw = (currentComputed.category_counts as Record<string, number>) || {};
-  const categoryCounts = { ...categoryCountsRaw };
-  if (categoryName && (eventType === 'view_item' || eventType === 'add_to_cart' || eventType === 'purchase')) {
-    categoryCounts[categoryName] = (categoryCounts[categoryName] || 0) + 1;
-  }
-  
-  // Determine top category
-  let topCategory = currentComputed.top_category as string | null;
-  if (Object.keys(categoryCounts).length > 0) {
-    topCategory = Object.entries(categoryCounts)
-      .sort(([, a], [, b]) => b - a)[0][0];
+  if (processError) {
+    console.error('Error processing event:', processError);
+    return { eventId: null, unifiedUserId: null, isDuplicate: false, syncJobsCreated: 0 };
   }
 
-  // Calculate frequency (events in last 7 days) - increment counter
-  const eventsLast7d = ((currentComputed.events_last_7d as number) || 0) + 1;
-  const eventsLast30d = ((currentComputed.events_last_30d as number) || 0) + 1;
-
-  // Calculate recency score (0-100, 100 = just seen, 0 = not seen in 30 days)
-  const recencyScore = 100; // Just saw them
-
-  // Calculate lifetime value if purchase
-  let lifetimeValue = (currentComputed.lifetime_value as number) || 0;
-  let totalOrders = (currentComputed.total_orders as number) || 0;
-  if (eventType === 'purchase') {
-    const orderValue = (properties?.total_price as number) || 
-                       (properties?.value as number) || 
-                       (properties?.revenue as number) || 0;
-    lifetimeValue += orderValue;
-    totalOrders += 1;
+  const eventResult = result?.[0];
+  if (!eventResult) {
+    console.error('No result from process_event_fast');
+    return { eventId: null, unifiedUserId: null, isDuplicate: false, syncJobsCreated: 0 };
   }
 
-  // Calculate days since first seen
-  const firstSeenAt = user?.first_seen_at ? new Date(user.first_seen_at) : new Date();
-  const daysSinceFirstSeen = Math.floor((Date.now() - firstSeenAt.getTime()) / (1000 * 60 * 60 * 24));
+  const { event_id: eventId, unified_user_id: unifiedUserId, is_duplicate: isDuplicate } = eventResult;
 
-  // Update computed traits
-  await supabase
-    .from('users_unified')
-    .update({
-      computed: {
-        ...currentComputed,
-        intent_score: newScore,
-        recency_score: recencyScore,
-        top_category: topCategory,
-        category_counts: categoryCounts,
-        events_last_7d: eventsLast7d,
-        events_last_30d: eventsLast30d,
-        lifetime_value: lifetimeValue,
-        total_orders: totalOrders,
-        days_since_first_seen: daysSinceFirstSeen,
-        last_event_type: eventType,
-        last_event_name: eventName,
-        last_activity_at: new Date().toISOString(),
-      },
-    })
-    .eq('id', unifiedUserId);
+  // If duplicate, return early - no need for further processing
+  if (isDuplicate) {
+    return { eventId, unifiedUserId, isDuplicate: true, syncJobsCreated: 0 };
+  }
+
+  // SECOND QUERY: Schedule sync jobs using database function
+  const { data: jobsCreated, error: syncError } = await supabase.rpc('schedule_sync_jobs', {
+    p_workspace_id: workspaceId,
+    p_event_id: eventId,
+    p_unified_user_id: unifiedUserId,
+    p_event_type: eventType,
+    p_event_name: eventName,
+    p_properties: payload.properties || {},
+    p_context: enrichedContext,
+  });
+
+  if (syncError) {
+    console.error('Error scheduling sync jobs:', syncError);
+  }
+
+  // THIRD QUERY (background, non-blocking): Update computed traits
+  // Using EdgeRuntime.waitUntil would be ideal, but we'll fire-and-forget for now
+  supabase.rpc('update_computed_traits_fast', {
+    p_unified_user_id: unifiedUserId,
+    p_event_type: eventType,
+    p_event_name: eventName,
+    p_properties: payload.properties || {},
+  }).then(() => {
+    // Traits updated
+  }).catch((err: Error) => {
+    console.error('Error updating computed traits:', err);
+  });
+
+  // FOURTH QUERY (background, non-blocking): Increment billing
+  supabase.rpc('increment_billing_usage', {
+    p_workspace_id: workspaceId,
+  }).then(() => {
+    // Billing updated
+  }).catch((err: Error) => {
+    console.error('Error incrementing billing:', err);
+  });
+
+  return { 
+    eventId, 
+    unifiedUserId, 
+    isDuplicate: false, 
+    syncJobsCreated: jobsCreated || 0 
+  };
 }
 
 Deno.serve(async (req) => {
@@ -422,8 +235,8 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Process event inline (no more events_raw, direct processing)
-    const result = await processEventInline(
+    // OPTIMIZED: Process event using database functions
+    const result = await processEventOptimized(
       supabase,
       authResult.workspaceId!,
       payload,
@@ -444,7 +257,8 @@ Deno.serve(async (req) => {
         success: true, 
         event_id: result.eventId,
         sync_jobs_queued: result.syncJobsCreated,
-        message: 'Event processed' 
+        duplicate: result.isDuplicate,
+        message: result.isDuplicate ? 'Duplicate event detected' : 'Event processed'
       }),
       { 
         status: 200, 
