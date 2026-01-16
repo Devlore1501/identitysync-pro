@@ -77,6 +77,9 @@ export function useApiKeys() {
       
       if (error) throw error;
       
+      // Store the full API key in localStorage for snippet generation
+      localStorage.setItem(`sf_api_key_${currentWorkspace.id}`, rawKey);
+      
       // Return the raw key (only shown once) along with the created record
       return { ...data, raw_key: rawKey };
     },

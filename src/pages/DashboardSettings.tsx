@@ -358,7 +358,7 @@ const DashboardSettings = () => {
                   </Button>
                 </div>
               ) : (
-                <TrackingSnippet apiKey={apiKeys[0].key_prefix} />
+                <TrackingSnippet />
               )}
             </section>
 
