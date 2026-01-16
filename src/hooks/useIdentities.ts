@@ -15,20 +15,37 @@ interface UnifiedUser {
   last_seen_at: string;
 }
 
-export function useIdentities(limit = 50) {
+interface UseIdentitiesOptions {
+  limit?: number;
+  page?: number;
+  search?: string;
+}
+
+export function useIdentities(options: UseIdentitiesOptions | number = {}) {
   const { currentWorkspace } = useWorkspace();
+  
+  // Support legacy call with just limit number
+  const opts = typeof options === 'number' ? { limit: options } : options;
+  const { limit = 50, page = 0, search } = opts;
 
   return useQuery({
-    queryKey: ['identities', currentWorkspace?.id, limit],
+    queryKey: ['identities', currentWorkspace?.id, limit, page, search],
     queryFn: async (): Promise<UnifiedUser[]> => {
       if (!currentWorkspace?.id) return [];
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('users_unified')
         .select('*')
         .eq('workspace_id', currentWorkspace.id)
         .order('last_seen_at', { ascending: false })
-        .limit(limit);
+        .range(page * limit, (page + 1) * limit - 1);
+
+      if (search && search.trim()) {
+        // Search in primary_email, phone, or id
+        query = query.or(`primary_email.ilike.%${search}%,phone.ilike.%${search}%,id.ilike.%${search}%`);
+      }
+
+      const { data, error } = await query;
 
       if (error) throw error;
       return (data || []) as UnifiedUser[];
@@ -37,18 +54,24 @@ export function useIdentities(limit = 50) {
   });
 }
 
-export function useIdentitiesCount() {
+export function useIdentitiesCount(search?: string) {
   const { currentWorkspace } = useWorkspace();
 
   return useQuery({
-    queryKey: ['identities-count', currentWorkspace?.id],
+    queryKey: ['identities-count', currentWorkspace?.id, search],
     queryFn: async () => {
       if (!currentWorkspace?.id) return 0;
 
-      const { count, error } = await supabase
+      let query = supabase
         .from('users_unified')
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', currentWorkspace.id);
+
+      if (search && search.trim()) {
+        query = query.or(`primary_email.ilike.%${search}%,phone.ilike.%${search}%,id.ilike.%${search}%`);
+      }
+
+      const { count, error } = await query;
 
       if (error) throw error;
       return count || 0;

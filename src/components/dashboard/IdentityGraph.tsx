@@ -1,42 +1,5 @@
-import { Users, Mail, Phone, Cookie, Tag } from "lucide-react";
-
-const identityData = {
-  totalProfiles: 12847,
-  resolvedToday: 342,
-  averageIdentities: 2.4,
-  recentResolutions: [
-    {
-      id: "uid_1",
-      identities: [
-        { type: "email", value: "john.d***@gmail.com" },
-        { type: "phone", value: "+1 ***-***-4567" },
-        { type: "customer_id", value: "cust_8a2b3c" },
-      ],
-      events: 47,
-      lastSeen: "2 min ago",
-    },
-    {
-      id: "uid_2",
-      identities: [
-        { type: "email", value: "sarah.m***@yahoo.com" },
-        { type: "anonymous_id", value: "anon_7f8e9d" },
-      ],
-      events: 12,
-      lastSeen: "15 min ago",
-    },
-    {
-      id: "uid_3",
-      identities: [
-        { type: "email", value: "mike.j***@outlook.com" },
-        { type: "phone", value: "+44 ***-***-8901" },
-        { type: "customer_id", value: "cust_2d4e6f" },
-        { type: "anonymous_id", value: "anon_1a2b3c" },
-      ],
-      events: 89,
-      lastSeen: "1 hour ago",
-    },
-  ],
-};
+import { Users, Mail, Phone, Cookie, Tag, Loader2 } from "lucide-react";
+import { useIdentityGraphStats } from "@/hooks/useIdentityGraphStats";
 
 const identityIcons: Record<string, React.ElementType> = {
   email: Mail,
@@ -46,6 +9,23 @@ const identityIcons: Record<string, React.ElementType> = {
 };
 
 export const IdentityGraph = () => {
+  const { data: stats, isLoading } = useIdentityGraphStats();
+
+  if (isLoading) {
+    return (
+      <div className="metric-card flex items-center justify-center py-12">
+        <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const identityData = stats || {
+    totalProfiles: 0,
+    resolvedToday: 0,
+    averageIdentities: 0,
+    recentResolutions: []
+  };
+
   return (
     <div className="metric-card">
       <div className="flex items-center justify-between mb-6">
@@ -77,35 +57,41 @@ export const IdentityGraph = () => {
       {/* Recent resolutions */}
       <div className="space-y-4">
         <h4 className="text-sm font-medium text-muted-foreground">Recent Resolutions</h4>
-        {identityData.recentResolutions.map((profile, index) => (
-          <div 
-            key={profile.id}
-            className="p-4 rounded-lg bg-muted/20 border border-border animate-fade-in"
-            style={{ animationDelay: `${index * 0.1}s` }}
-          >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-mono text-muted-foreground">{profile.id}</span>
-              <span className="text-xs text-muted-foreground">{profile.lastSeen}</span>
+        {identityData.recentResolutions.length > 0 ? (
+          identityData.recentResolutions.map((profile, index) => (
+            <div 
+              key={profile.id}
+              className="p-4 rounded-lg bg-muted/20 border border-border animate-fade-in"
+              style={{ animationDelay: `${index * 0.1}s` }}
+            >
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-mono text-muted-foreground">{profile.id}</span>
+                <span className="text-xs text-muted-foreground">{profile.lastSeen}</span>
+              </div>
+              <div className="flex flex-wrap gap-2 mb-3">
+                {profile.identities.map((identity, i) => {
+                  const Icon = identityIcons[identity.type] || Tag;
+                  return (
+                    <div 
+                      key={i}
+                      className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-card text-xs"
+                    >
+                      <Icon className="w-3 h-3 text-primary" />
+                      <span className="text-muted-foreground">{identity.value}</span>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="text-xs text-muted-foreground">
+                {profile.events} events tracked
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2 mb-3">
-              {profile.identities.map((identity, i) => {
-                const Icon = identityIcons[identity.type] || Tag;
-                return (
-                  <div 
-                    key={i}
-                    className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-card text-xs"
-                  >
-                    <Icon className="w-3 h-3 text-primary" />
-                    <span className="text-muted-foreground">{identity.value}</span>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              {profile.events} events tracked
-            </div>
+          ))
+        ) : (
+          <div className="text-center py-6 text-muted-foreground text-sm">
+            No profiles resolved yet
           </div>
-        ))}
+        )}
       </div>
     </div>
   );

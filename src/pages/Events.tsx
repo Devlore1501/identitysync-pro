@@ -1,9 +1,11 @@
+import { useState, useMemo } from "react";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Filter, Download, RefreshCw, Loader2 } from "lucide-react";
+import { Search, Filter, Download, RefreshCw, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
 import { useEvents, useEventsCount } from "@/hooks/useEvents";
 import { format } from "date-fns";
+import { useDebounce } from "@/hooks/useDebounce";
 
 const eventTypeColors: Record<string, string> = {
   purchase: "bg-green-500/20 text-green-600 border-green-500/30",
@@ -14,9 +16,37 @@ const eventTypeColors: Record<string, string> = {
   custom: "bg-purple-500/20 text-purple-600 border-purple-500/30",
 };
 
+const PAGE_SIZE = 50;
+
 const Events = () => {
-  const { data: events, isLoading, refetch } = useEvents({ limit: 50 });
-  const { data: eventsCount } = useEventsCount();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [page, setPage] = useState(0);
+  
+  const debouncedSearch = useDebounce(searchQuery, 300);
+  
+  const { data: events, isLoading, refetch } = useEvents({ 
+    limit: PAGE_SIZE, 
+    page,
+    search: debouncedSearch 
+  });
+  const { data: eventsCount } = useEventsCount(debouncedSearch);
+
+  const totalPages = useMemo(() => {
+    return Math.ceil((eventsCount?.total || 0) / PAGE_SIZE);
+  }, [eventsCount?.total]);
+
+  const handlePrevious = () => {
+    if (page > 0) setPage(page - 1);
+  };
+
+  const handleNext = () => {
+    if (page < totalPages - 1) setPage(page + 1);
+  };
+
+  // Reset page when search changes
+  useMemo(() => {
+    setPage(0);
+  }, [debouncedSearch]);
 
   return (
     <DashboardLayout>
@@ -45,7 +75,9 @@ const Events = () => {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search by email, event ID, or type..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search by event name, type, or ID..."
               className="w-full pl-10 pr-4 py-2 rounded-lg bg-muted/50 border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>
@@ -120,8 +152,8 @@ const Events = () => {
             </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
-              <p className="mb-2">No events captured yet</p>
-              <p className="text-sm">Events will appear here once you start tracking.</p>
+              <p className="mb-2">{searchQuery ? 'No events found matching your search' : 'No events captured yet'}</p>
+              <p className="text-sm">{searchQuery ? 'Try a different search term.' : 'Events will appear here once you start tracking.'}</p>
             </div>
           )}
         </div>
@@ -129,11 +161,30 @@ const Events = () => {
         {/* Pagination */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {events?.length || 0} of {eventsCount?.week?.toLocaleString() || 0} events (last 7 days)
+            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, eventsCount?.total || 0)} of {(eventsCount?.total || 0).toLocaleString()} events
           </p>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" disabled>Previous</Button>
-            <Button variant="outline" size="sm" disabled={!events || events.length < 50}>Next</Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handlePrevious}
+              disabled={page === 0}
+            >
+              <ChevronLeft className="w-4 h-4 mr-1" />
+              Previous
+            </Button>
+            <span className="text-sm text-muted-foreground px-2">
+              Page {page + 1} of {totalPages || 1}
+            </span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleNext}
+              disabled={page >= totalPages - 1}
+            >
+              Next
+              <ChevronRight className="w-4 h-4 ml-1" />
+            </Button>
           </div>
         </div>
       </div>
