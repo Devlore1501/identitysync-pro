@@ -11,6 +11,7 @@ import Auth from "./pages/Auth";
 import Dashboard from "./pages/Dashboard";
 import Events from "./pages/Events";
 import Identities from "./pages/Identities";
+import IdentityDetail from "./pages/IdentityDetail";
 import Destinations from "./pages/Destinations";
 import DashboardSettings from "./pages/DashboardSettings";
 import AuditLogs from "./pages/AuditLogs";
@@ -42,6 +43,11 @@ const App = () => (
               <Route path="/dashboard/identities" element={
                 <ProtectedRoute>
                   <Identities />
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/identities/:id" element={
+                <ProtectedRoute>
+                  <IdentityDetail />
                 </ProtectedRoute>
               } />
               <Route path="/dashboard/destinations" element={

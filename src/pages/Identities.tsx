@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Search, Filter, Users, Mail, Phone, Cookie, Loader2 } from "lucide-react";
@@ -5,6 +6,7 @@ import { useIdentities, useIdentitiesCount } from "@/hooks/useIdentities";
 import { formatDistanceToNow } from "date-fns";
 
 const Identities = () => {
+  const navigate = useNavigate();
   const { data: profiles, isLoading } = useIdentities(50);
   const { data: profilesCount } = useIdentitiesCount();
 
@@ -101,6 +103,7 @@ const Identities = () => {
                 key={profile.id}
                 className="metric-card hover:border-primary/30 transition-colors cursor-pointer animate-fade-in"
                 style={{ animationDelay: `${index * 0.05}s` }}
+                onClick={() => navigate(`/dashboard/identities/${profile.id}`)}
               >
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
