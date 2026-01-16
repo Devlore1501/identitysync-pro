@@ -220,6 +220,13 @@ function buildBehavioralProperties(user: {
     sf_lifetime_value: computed.lifetime_value ?? 0,
     sf_orders_count: computed.orders_count ?? 0,
     
+    // === EMAIL ENGAGEMENT (from Klaviyo webhooks) ===
+    sf_email_opens_30d: computed.email_opens_30d ?? 0,
+    sf_email_clicks_30d: computed.email_clicks_30d ?? 0,
+    sf_email_engagement_score: computed.email_engagement_score ?? 0,
+    sf_is_subscribed: computed.is_subscribed ?? null,
+    sf_last_klaviyo_event: computed.last_klaviyo_event ?? null,
+    
     // === METADATA ===
     sf_computed_at: computed.last_computed_at ?? null,
     sf_customer_ids: user.customer_ids && user.customer_ids.length > 0 ? user.customer_ids.join(',') : null,
