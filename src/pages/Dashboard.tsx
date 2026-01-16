@@ -5,6 +5,7 @@ import { RecentEvents } from "@/components/dashboard/RecentEvents";
 import { IdentityGraph } from "@/components/dashboard/IdentityGraph";
 import { FunnelWidget } from "@/components/dashboard/FunnelWidget";
 import { BehavioralInsights } from "@/components/dashboard/BehavioralInsights";
+import { SyncControl } from "@/components/dashboard/SyncControl";
 import { Activity, Users, Send, Clock, CheckCircle, AlertCircle, Code } from "lucide-react";
 import { useEventsCount } from "@/hooks/useEvents";
 import { useIdentitiesCount } from "@/hooks/useIdentities";
@@ -68,8 +69,13 @@ const Dashboard = () => {
           <IdentityGraph />
         </div>
 
-        {/* Behavioral Intelligence */}
-        <BehavioralInsights />
+        {/* Behavioral Intelligence + Sync Control */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2">
+            <BehavioralInsights />
+          </div>
+          <SyncControl />
+        </div>
 
         {/* Setup checklist */}
         <div className="metric-card">
