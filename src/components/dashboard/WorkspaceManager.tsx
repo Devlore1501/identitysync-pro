@@ -79,6 +79,11 @@ export function WorkspaceManager({ onWorkspaceChange }: WorkspaceManagerProps) {
       return;
     }
 
+    if (!profile?.account_id) {
+      toast.error("Account non trovato");
+      return;
+    }
+
     setIsCreating(true);
     try {
       const { error } = await supabase
