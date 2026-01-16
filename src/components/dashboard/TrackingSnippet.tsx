@@ -205,26 +205,66 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
       el.addEventListener('click',function(){w.sfTrack('Cart Viewed',{currency:currency});});
     });
     
-    // Checkout start
+    // Checkout start + email capture
     if(location.pathname.includes('/checkout')){
       w.sfTrack('Begin Checkout',{url:location.href,currency:currency});
+      
+      // Capture email from checkout input field
+      var emailInput=document.querySelector('input[name="email"],input[type="email"],#checkout_email');
+      if(emailInput){
+        emailInput.addEventListener('blur',function(){
+          var email=emailInput.value;
+          if(email&&email.includes('@')){
+            localStorage.setItem('sf_checkout_email',email);
+            w.sfIdentify(email,{source:'checkout_form'});
+          }
+        });
+      }
+      
+      // Also try to get from Shopify customer if logged in
+      if(w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.page){
+        var custId=w.ShopifyAnalytics.meta.page.customerId;
+        if(custId){
+          w.sfTrack('Checkout Customer',{customer_id:custId,currency:currency});
+        }
+      }
     }
     
     // Thank you page (purchase complete)
     if(location.pathname.includes('/thank_you')||location.pathname.includes('/orders/')){
       if(w.Shopify.checkout){
         var c=w.Shopify.checkout;
+        var checkoutEmail=c.email||localStorage.getItem('sf_checkout_email');
+        
         w.sfTrack('Purchase',{
           order_id:c.order_id,
           total:c.total_price/100,
           subtotal:c.subtotal_price/100,
           currency:c.currency||'USD',
+          email:checkoutEmail,
+          customer_id:c.customer_id||null,
           line_items:c.line_items?c.line_items.map(function(i){
-            return{product_id:i.product_id,variant_id:i.variant_id,quantity:i.quantity,price:i.price/100}
+            return{product_id:i.product_id,variant_id:i.variant_id,quantity:i.quantity,price:i.price/100,name:i.title}
           }):[]
         });
-        if(c.email){w.sfIdentify(c.email,{first_name:c.billing_address?c.billing_address.first_name:'',last_name:c.billing_address?c.billing_address.last_name:''})}
+        
+        if(checkoutEmail){
+          w.sfIdentify(checkoutEmail,{
+            first_name:c.billing_address?c.billing_address.first_name:'',
+            last_name:c.billing_address?c.billing_address.last_name:'',
+            customer_id:c.customer_id||null,
+            order_id:c.order_id,
+            total_spent:c.total_price/100,
+            source:'shopify_checkout'
+          });
+          localStorage.removeItem('sf_checkout_email');
+        }
       }
+    }
+    
+    // Try to capture email from Shopify customer session
+    if(w.__st&&w.__st.cid){
+      w.sfTrack('Customer Session',{customer_id:w.__st.cid});
     }
   }
   
