@@ -8,7 +8,7 @@ interface Destination {
   id: string;
   workspace_id: string;
   name: string;
-  type: 'klaviyo' | 'webhook' | 'ga4';
+  type: 'klaviyo' | 'webhook' | 'ga4' | 'meta';
   config: Json;
   event_mapping: Json;
   property_mapping: Json;
@@ -75,7 +75,7 @@ export function useDestinations() {
   });
 
   const createDestination = useMutation({
-    mutationFn: async (destination: { name: string; type: 'klaviyo' | 'webhook' | 'ga4'; config: Json; enabled: boolean }) => {
+    mutationFn: async (destination: { name: string; type: 'klaviyo' | 'webhook' | 'ga4' | 'meta'; config: Json; enabled: boolean }) => {
       if (!currentWorkspace?.id) throw new Error('No workspace selected');
 
       const { data, error } = await supabase
@@ -113,7 +113,7 @@ export function useDestinations() {
   });
 
   const updateDestination = useMutation({
-    mutationFn: async ({ id, name, type, config, enabled }: { id: string; name?: string; type?: 'klaviyo' | 'webhook' | 'ga4'; config?: Json; enabled?: boolean }) => {
+    mutationFn: async ({ id, name, type, config, enabled }: { id: string; name?: string; type?: 'klaviyo' | 'webhook' | 'ga4' | 'meta'; config?: Json; enabled?: boolean }) => {
       if (!currentWorkspace?.id) throw new Error('No workspace selected');
 
       const updates: Record<string, unknown> = {};
