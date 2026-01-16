@@ -1,6 +1,6 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { MetricCard } from "@/components/dashboard/MetricCard";
-import { IdentityGraph } from "@/components/dashboard/IdentityGraph";
+import { HighIntentWidget } from "@/components/dashboard/HighIntentWidget";
 import { FunnelWidget } from "@/components/dashboard/FunnelWidget";
 import { BehavioralInsights } from "@/components/dashboard/BehavioralInsights";
 import { SegmentsWidget } from "@/components/dashboard/SegmentsWidget";
@@ -92,10 +92,10 @@ const Dashboard = () => {
         {/* Behavioral Intelligence Section */}
         <BehavioralInsights />
 
-        {/* Segments + Identity Resolution */}
+        {/* Segments + High Intent Users */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           <SegmentsWidget />
-          <IdentityGraph />
+          <HighIntentWidget />
         </div>
 
         {/* Funnel + Sync Intelligence */}
