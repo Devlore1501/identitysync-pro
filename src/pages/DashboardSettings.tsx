@@ -3,11 +3,13 @@ import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe } from "lucide-react";
+import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle } from "lucide-react";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { useUpdateWorkspace } from "@/hooks/useWorkspaceSettings";
+import { useBillingUsage } from "@/hooks/useBillingUsage";
 import { TrackingSnippet } from "@/components/dashboard/TrackingSnippet";
 import { toast } from "sonner";
 import {
@@ -27,10 +29,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 
+const PLAN_LIMITS = {
+  free: 10000,
+  starter: 50000,
+  growth: 250000,
+  enterprise: 1000000,
+};
+
 const DashboardSettings = () => {
   const { currentWorkspace } = useWorkspace();
   const { apiKeys, isLoading, createApiKey, revokeApiKey } = useApiKeys();
   const updateWorkspace = useUpdateWorkspace();
+  const { data: billingUsage } = useBillingUsage();
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -275,15 +285,51 @@ const DashboardSettings = () => {
             <section>
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
                 <CreditCard className="w-5 h-5" />
-                Billing
+                Billing & Usage
               </h2>
-              <div className="metric-card">
-                <div className="flex items-center justify-between mb-6">
+              <div className="metric-card space-y-6">
+                <div className="flex items-center justify-between">
                   <div>
                     <div className="text-2xl font-bold">Free Plan</div>
                     <div className="text-muted-foreground">10K events/month included</div>
                   </div>
                   <Button variant="outline">Upgrade</Button>
+                </div>
+
+                {/* Usage Progress */}
+                <div className="pt-4 border-t border-border">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm font-medium">Events this month</span>
+                    <span className="text-sm text-muted-foreground">
+                      {(billingUsage?.events_count || 0).toLocaleString()} / {PLAN_LIMITS.free.toLocaleString()}
+                    </span>
+                  </div>
+                  <Progress 
+                    value={Math.min(((billingUsage?.events_count || 0) / PLAN_LIMITS.free) * 100, 100)} 
+                    className="h-2"
+                  />
+                  {(billingUsage?.events_count || 0) > PLAN_LIMITS.free * 0.8 && (
+                    <div className="flex items-center gap-2 mt-3 p-3 bg-warning/10 rounded-lg text-warning">
+                      <AlertTriangle className="w-4 h-4" />
+                      <span className="text-sm">
+                        {(billingUsage?.events_count || 0) >= PLAN_LIMITS.free
+                          ? "You've reached your plan limit. Upgrade to continue tracking events."
+                          : "You're approaching your plan limit. Consider upgrading soon."}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Additional Stats */}
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-border">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Profiles tracked</div>
+                    <div className="text-lg font-semibold">{(billingUsage?.profiles_count || 0).toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Syncs this month</div>
+                    <div className="text-lg font-semibold">{(billingUsage?.syncs_count || 0).toLocaleString()}</div>
+                  </div>
                 </div>
               </div>
             </section>

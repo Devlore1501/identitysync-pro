@@ -195,21 +195,77 @@ async function processEventInline(
     }
   }
 
-  // Update intent score for the unified user
+  // Update computed traits for the unified user
   if (unifiedUserId) {
-    await updateIntentScore(supabase, unifiedUserId, eventType);
+    await updateComputedTraits(supabase, unifiedUserId, eventType, eventName, payload.properties || {});
   }
+
+  // Track billing usage
+  await incrementBillingUsage(supabase, workspaceId);
 
   return { eventId: insertedEvent.id, syncJobsCreated };
 }
 
-// Calculate and update intent score based on event type
+// Increment billing usage counter for the current period
 // deno-lint-ignore no-explicit-any
-async function updateIntentScore(
+async function incrementBillingUsage(supabase: any, workspaceId: string): Promise<void> {
+  try {
+    // Get workspace to find account_id
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('account_id')
+      .eq('id', workspaceId)
+      .single();
+
+    if (!workspace) return;
+
+    const now = new Date();
+    const periodStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    const periodEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+
+    // Try to update existing record
+    const { data: existing } = await supabase
+      .from('billing_usage')
+      .select('id, events_count')
+      .eq('account_id', workspace.account_id)
+      .eq('period_start', periodStart)
+      .single();
+
+    if (existing) {
+      await supabase
+        .from('billing_usage')
+        .update({ 
+          events_count: existing.events_count + 1,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existing.id);
+    } else {
+      await supabase
+        .from('billing_usage')
+        .insert({
+          account_id: workspace.account_id,
+          workspace_id: workspaceId,
+          period_start: periodStart,
+          period_end: periodEnd,
+          events_count: 1,
+        });
+    }
+  } catch (error) {
+    console.error('Error tracking billing usage:', error);
+    // Don't fail the request if billing tracking fails
+  }
+}
+
+// Calculate and update computed traits based on event
+// deno-lint-ignore no-explicit-any
+async function updateComputedTraits(
   supabase: any,
   unifiedUserId: string,
-  eventType: string
+  eventType: string,
+  eventName: string,
+  properties: Record<string, unknown>
 ): Promise<void> {
+  // Intent score weights
   const scoreMap: Record<string, number> = {
     'page_view': 1,
     'view_item': 3,
@@ -221,24 +277,82 @@ async function updateIntentScore(
 
   const scoreIncrement = scoreMap[eventType] || 1;
 
-  // Get current computed data
+  // Get current user data
   const { data: user } = await supabase
     .from('users_unified')
-    .select('computed')
+    .select('computed, first_seen_at')
     .eq('id', unifiedUserId)
     .single();
 
   const currentComputed = (user?.computed as Record<string, unknown>) || {};
   const currentScore = (currentComputed.intent_score as number) || 0;
-  const newScore = Math.min(currentScore + scoreIncrement, 100); // Cap at 100
+  
+  // Calculate new intent score with time decay
+  const lastActivityTime = currentComputed.last_activity_at 
+    ? new Date(currentComputed.last_activity_at as string).getTime() 
+    : Date.now();
+  const hoursSinceLastActivity = (Date.now() - lastActivityTime) / (1000 * 60 * 60);
+  const decayFactor = Math.max(0.5, 1 - (hoursSinceLastActivity / 168)); // Decay over 1 week
+  const decayedScore = currentScore * decayFactor;
+  const newScore = Math.min(Math.round(decayedScore + scoreIncrement), 100);
 
+  // Update category counts for top_category
+  const categoryName = (properties?.category as string) || 
+                       (properties?.product_category as string) || 
+                       (properties?.item_category as string);
+  const categoryCountsRaw = (currentComputed.category_counts as Record<string, number>) || {};
+  const categoryCounts = { ...categoryCountsRaw };
+  if (categoryName && (eventType === 'view_item' || eventType === 'add_to_cart' || eventType === 'purchase')) {
+    categoryCounts[categoryName] = (categoryCounts[categoryName] || 0) + 1;
+  }
+  
+  // Determine top category
+  let topCategory = currentComputed.top_category as string | null;
+  if (Object.keys(categoryCounts).length > 0) {
+    topCategory = Object.entries(categoryCounts)
+      .sort(([, a], [, b]) => b - a)[0][0];
+  }
+
+  // Calculate frequency (events in last 7 days) - increment counter
+  const eventsLast7d = ((currentComputed.events_last_7d as number) || 0) + 1;
+  const eventsLast30d = ((currentComputed.events_last_30d as number) || 0) + 1;
+
+  // Calculate recency score (0-100, 100 = just seen, 0 = not seen in 30 days)
+  const recencyScore = 100; // Just saw them
+
+  // Calculate lifetime value if purchase
+  let lifetimeValue = (currentComputed.lifetime_value as number) || 0;
+  let totalOrders = (currentComputed.total_orders as number) || 0;
+  if (eventType === 'purchase') {
+    const orderValue = (properties?.total_price as number) || 
+                       (properties?.value as number) || 
+                       (properties?.revenue as number) || 0;
+    lifetimeValue += orderValue;
+    totalOrders += 1;
+  }
+
+  // Calculate days since first seen
+  const firstSeenAt = user?.first_seen_at ? new Date(user.first_seen_at) : new Date();
+  const daysSinceFirstSeen = Math.floor((Date.now() - firstSeenAt.getTime()) / (1000 * 60 * 60 * 24));
+
+  // Update computed traits
   await supabase
     .from('users_unified')
     .update({
       computed: {
         ...currentComputed,
         intent_score: newScore,
+        recency_score: recencyScore,
+        top_category: topCategory,
+        category_counts: categoryCounts,
+        events_last_7d: eventsLast7d,
+        events_last_30d: eventsLast30d,
+        lifetime_value: lifetimeValue,
+        total_orders: totalOrders,
+        days_since_first_seen: daysSinceFirstSeen,
         last_event_type: eventType,
+        last_event_name: eventName,
+        last_activity_at: new Date().toISOString(),
       },
     })
     .eq('id', unifiedUserId);
