@@ -126,7 +126,7 @@ export function transformToSignal(user: {
     // Engagement counts
     viewedProducts7d: (computed.unique_products_viewed as number) ?? 0,
     viewedCategories7d: (computed.unique_categories_viewed as number) ?? 0,
-    atc7d: 0, // TODO: Compute from events
+    atc7d: (computed.atc_7d as number) ?? 0,
     sessionCount30d: (computed.session_count_30d as number) ?? 1,
     
     // Abandonment signals
