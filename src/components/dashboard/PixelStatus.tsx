@@ -1,11 +1,58 @@
 import { usePixelStatus } from "@/hooks/useFunnelStats";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, Code, Webhook } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CheckCircle2, XCircle, Clock, Code, Webhook, Loader2, Send } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { it } from "date-fns/locale";
+import { useState } from "react";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 export function PixelStatus() {
   const { data: status, isLoading } = usePixelStatus();
+  const { currentWorkspace } = useWorkspace();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [isTesting, setIsTesting] = useState(false);
+
+  const handleTestWebhook = async () => {
+    if (!currentWorkspace?.id) {
+      toast({
+        title: "Errore",
+        description: "Workspace non trovato",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsTesting(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('test-webhook', {
+        body: { workspace_id: currentWorkspace.id }
+      });
+
+      if (error) throw error;
+
+      toast({
+        title: "Test completato!",
+        description: "Evento webhook di test ricevuto correttamente",
+      });
+
+      // Refresh pixel status
+      queryClient.invalidateQueries({ queryKey: ['pixel-status'] });
+    } catch (error: any) {
+      console.error('Test webhook error:', error);
+      toast({
+        title: "Errore nel test",
+        description: error.message || "Impossibile inviare il test webhook",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   if (isLoading) {
     return null;
@@ -90,9 +137,30 @@ export function PixelStatus() {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
-              Configura i webhooks Shopify per ricevere ordini e checkout
-            </p>
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Configura i webhooks Shopify per ricevere ordini e checkout
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestWebhook}
+                disabled={isTesting}
+                className="w-full"
+              >
+                {isTesting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Invio in corso...
+                  </>
+                ) : (
+                  <>
+                    <Send className="w-4 h-4 mr-2" />
+                    Invia Test Webhook
+                  </>
+                )}
+              </Button>
+            </div>
           )}
         </div>
       </div>
