@@ -1,1 +1,10 @@
 project_id = "zkgvvuyubalbymhfxrex"
+
+[functions.collect]
+verify_jwt = false
+
+[functions.identify]
+verify_jwt = false
+
+[functions.health]
+verify_jwt = false

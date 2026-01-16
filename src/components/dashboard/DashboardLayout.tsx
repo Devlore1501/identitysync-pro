@@ -1,5 +1,5 @@
 import { ReactNode, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, 
   Activity, 
@@ -9,10 +9,25 @@ import {
   ChevronLeft,
   ChevronRight,
   HelpCircle,
-  Bell
+  Bell,
+  LogOut,
+  ChevronDown,
+  Building2,
+  Plus
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 
 interface NavItem {
   label: string;
@@ -35,6 +50,18 @@ interface DashboardLayoutProps {
 export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, profile, signOut } = useAuth();
+  const { workspaces, currentWorkspace, setCurrentWorkspace } = useWorkspace();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
+  const userInitials = profile?.full_name 
+    ? profile.full_name.split(' ').map(n => n[0]).join('').toUpperCase()
+    : user?.email?.[0].toUpperCase() || 'U';
 
   return (
     <div className="min-h-screen bg-background flex">
@@ -54,6 +81,48 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             {!collapsed && <span className="font-semibold">SignalForge</span>}
           </Link>
         </div>
+
+        {/* Workspace Selector */}
+        {!collapsed && currentWorkspace && (
+          <div className="px-2 py-3 border-b border-sidebar-border">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  className="w-full justify-between text-left font-normal h-auto py-2"
+                >
+                  <div className="flex items-center gap-2 truncate">
+                    <Building2 className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                    <span className="truncate text-sm">{currentWorkspace.name}</span>
+                  </div>
+                  <ChevronDown className="w-4 h-4 flex-shrink-0 text-muted-foreground" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel>Workspaces</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {workspaces.map((workspace) => (
+                  <DropdownMenuItem
+                    key={workspace.id}
+                    onClick={() => setCurrentWorkspace(workspace)}
+                    className={cn(
+                      "cursor-pointer",
+                      workspace.id === currentWorkspace.id && "bg-accent"
+                    )}
+                  >
+                    <Building2 className="w-4 h-4 mr-2" />
+                    {workspace.name}
+                  </DropdownMenuItem>
+                ))}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="cursor-pointer">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add workspace
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
 
         {/* Navigation */}
         <nav className="flex-1 py-4 px-2 overflow-y-auto">
@@ -118,9 +187,37 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
             <Button variant="ghost" size="icon">
               <Bell className="w-5 h-5" />
             </Button>
-            <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center ml-2">
-              <span className="text-sm font-medium text-primary">U</span>
-            </div>
+            
+            {/* User Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="relative h-8 w-8 rounded-full ml-2">
+                  <Avatar className="h-8 w-8">
+                    <AvatarFallback className="bg-primary/20 text-primary">
+                      {userInitials}
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="flex flex-col space-y-1">
+                    <p className="text-sm font-medium">{profile?.full_name || 'User'}</p>
+                    <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                  </div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate('/dashboard/settings')}>
+                  <Settings className="w-4 h-4 mr-2" />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleSignOut} className="text-destructive focus:text-destructive">
+                  <LogOut className="w-4 h-4 mr-2" />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </header>
 
