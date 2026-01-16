@@ -12,18 +12,17 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useBillingUsage, useBillingHistory } from "@/hooks/useBillingUsage";
+import { useAccount } from "@/hooks/useAccount";
 import { PLANS, getPlanById, formatEventCount, OVERAGE_PRICE } from "@/lib/plans";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 
-interface BillingSectionProps {
-  accountPlan?: string;
-}
-
-export function BillingSection({ accountPlan = "starter" }: BillingSectionProps) {
+export function BillingSection() {
   const { data: currentUsage, isLoading } = useBillingUsage();
   const { data: billingHistory } = useBillingHistory();
+  const { data: account } = useAccount();
   
+  const accountPlan = account?.plan || "pro";
   const plan = getPlanById(accountPlan) || PLANS[0];
   const eventsUsed = currentUsage?.events_count || 0;
   const eventsLimit = plan.events;
