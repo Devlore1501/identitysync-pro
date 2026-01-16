@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.webhooks-klaviyo]
 verify_jwt = false
+
+[functions.poll-klaviyo-events]
+verify_jwt = false
