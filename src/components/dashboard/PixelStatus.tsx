@@ -1,7 +1,8 @@
 import { usePixelStatus } from "@/hooks/useFunnelStats";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { CheckCircle2, XCircle, Clock, Code, Webhook, Loader2, Send } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { CheckCircle2, XCircle, Clock, Code, Webhook, Loader2, Send, ShoppingCart, Mail, User } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { it } from "date-fns/locale";
 import { useState } from "react";
@@ -10,12 +11,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 
+interface TestResult {
+  success: boolean;
+  email?: string;
+  unified_user_id?: string;
+  order_id?: string;
+  message?: string;
+}
+
 export function PixelStatus() {
   const { data: status, isLoading } = usePixelStatus();
   const { currentWorkspace } = useWorkspace();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [isTesting, setIsTesting] = useState(false);
+  const [isTestingOrder, setIsTestingOrder] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
+  const [testResult, setTestResult] = useState<TestResult | null>(null);
 
   const handleTestWebhook = async () => {
     if (!currentWorkspace?.id) {
@@ -28,9 +40,10 @@ export function PixelStatus() {
     }
 
     setIsTesting(true);
+    setTestResult(null);
     try {
       const { data, error } = await supabase.functions.invoke('test-webhook', {
-        body: { workspace_id: currentWorkspace.id }
+        body: { workspace_id: currentWorkspace.id, test_type: 'simple' }
       });
 
       if (error) throw error;
@@ -40,8 +53,9 @@ export function PixelStatus() {
         description: "Evento webhook di test ricevuto correttamente",
       });
 
-      // Refresh pixel status
+      // Refresh queries
       queryClient.invalidateQueries({ queryKey: ['pixel-status'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
     } catch (error: any) {
       console.error('Test webhook error:', error);
       toast({
@@ -51,6 +65,63 @@ export function PixelStatus() {
       });
     } finally {
       setIsTesting(false);
+    }
+  };
+
+  const handleTestOrder = async () => {
+    if (!currentWorkspace?.id) {
+      toast({
+        title: "Errore",
+        description: "Workspace non trovato",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsTestingOrder(true);
+    setTestResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke('test-webhook', {
+        body: { 
+          workspace_id: currentWorkspace.id, 
+          test_type: 'order',
+          test_email: testEmail || undefined
+        }
+      });
+
+      if (error) throw error;
+
+      setTestResult({
+        success: true,
+        email: data.email,
+        unified_user_id: data.unified_user_id,
+        order_id: data.order_id,
+        message: data.message
+      });
+
+      toast({
+        title: "Ordine test creato!",
+        description: `Email ${data.email} salvata nel profilo`,
+      });
+
+      // Refresh all relevant queries
+      queryClient.invalidateQueries({ queryKey: ['pixel-status'] });
+      queryClient.invalidateQueries({ queryKey: ['events'] });
+      queryClient.invalidateQueries({ queryKey: ['identities'] });
+      queryClient.invalidateQueries({ queryKey: ['identities-count'] });
+    } catch (error: any) {
+      console.error('Test order error:', error);
+      setTestResult({
+        success: false,
+        message: error.message || "Impossibile creare l'ordine test"
+      });
+      toast({
+        title: "Errore nel test",
+        description: error.message || "Impossibile creare l'ordine test",
+        variant: "destructive"
+      });
+    } finally {
+      setIsTestingOrder(false);
     }
   };
 
@@ -160,6 +231,90 @@ export function PixelStatus() {
                   </>
                 )}
               </Button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Test Order with Email */}
+      <div className="p-4 rounded-lg border border-primary/30 bg-primary/5">
+        <div className="flex items-center gap-2 mb-3">
+          <ShoppingCart className="w-4 h-4" />
+          <span className="font-medium">Simula Ordine con Email</span>
+          <Badge variant="secondary" className="ml-auto text-xs">
+            Test
+          </Badge>
+        </div>
+        
+        <p className="text-sm text-muted-foreground mb-3">
+          Crea un ordine di test completo con email per verificare la cattura delle identità.
+        </p>
+
+        <div className="space-y-3">
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Email test (opzionale)"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                className="pl-10 text-sm"
+                type="email"
+              />
+            </div>
+          </div>
+          
+          <Button
+            onClick={handleTestOrder}
+            disabled={isTestingOrder}
+            className="w-full"
+            variant="default"
+          >
+            {isTestingOrder ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Creazione ordine...
+              </>
+            ) : (
+              <>
+                <ShoppingCart className="w-4 h-4 mr-2" />
+                Simula Ordine Shopify
+              </>
+            )}
+          </Button>
+
+          {testResult && (
+            <div className={`p-3 rounded-lg text-sm ${
+              testResult.success 
+                ? 'bg-green-500/10 text-green-700 dark:text-green-400' 
+                : 'bg-destructive/10 text-destructive'
+            }`}>
+              {testResult.success ? (
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span className="font-medium">Ordine creato con successo!</span>
+                  </div>
+                  <div className="text-xs space-y-0.5 ml-6">
+                    <div className="flex items-center gap-1">
+                      <Mail className="w-3 h-3" />
+                      Email: <span className="font-mono">{testResult.email}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <User className="w-3 h-3" />
+                      Profile ID: <span className="font-mono">{testResult.unified_user_id?.slice(0, 8)}...</span>
+                    </div>
+                  </div>
+                  <p className="text-xs mt-2 ml-6">
+                    Vai su <strong>Identities</strong> per vedere il profilo creato!
+                  </p>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <XCircle className="w-4 h-4" />
+                  <span>{testResult.message}</span>
+                </div>
+              )}
             </div>
           )}
         </div>
