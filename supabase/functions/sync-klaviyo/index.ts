@@ -188,36 +188,115 @@ Deno.serve(async (req) => {
 
       if (job.job_type === 'profile_upsert' && job.unified_user) {
         const user = job.unified_user;
+        const computed = user.computed || {};
+        
+        // Build behavioral properties with sf_ prefix for Klaviyo
+        const behavioralProperties: Record<string, unknown> = {
+          // === IDENTIFICATION ===
+          sf_unified_user_id: user.id,
+          sf_first_seen_at: user.first_seen_at,
+          sf_last_seen_at: user.last_seen_at,
+          
+          // === CORE BEHAVIORAL SCORES ===
+          sf_intent_score: computed.intent_score ?? 0,
+          sf_frequency_score: computed.frequency_score ?? 10,
+          sf_depth_score: computed.depth_score ?? 0,
+          sf_recency_days: computed.recency_days ?? 0,
+          
+          // === BEHAVIORAL SIGNALS ===
+          sf_top_category_30d: computed.top_category_30d ?? null,
+          sf_drop_off_stage: computed.drop_off_stage ?? 'visitor',
+          
+          // === ENGAGEMENT COUNTS ===
+          sf_products_viewed_count: computed.unique_products_viewed ?? 0,
+          sf_categories_viewed_count: computed.unique_categories_viewed ?? 0,
+          sf_session_count_30d: computed.session_count_30d ?? 1,
+          
+          // === ABANDONMENT TIMESTAMPS (for flow triggers) ===
+          sf_cart_abandoned_at: computed.cart_abandoned_at ?? null,
+          sf_checkout_abandoned_at: computed.checkout_abandoned_at ?? null,
+          
+          // === REVENUE METRICS ===
+          sf_lifetime_value: computed.lifetime_value ?? 0,
+          sf_orders_count: computed.orders_count ?? 0,
+          
+          // === LAST COMPUTED TIMESTAMP ===
+          sf_computed_at: computed.last_computed_at ?? null,
+          
+          // === CUSTOMER IDs (for linking) ===
+          sf_customer_ids: user.customer_ids?.length > 0 ? user.customer_ids.join(',') : null,
+          sf_anonymous_ids_count: user.anonymous_ids?.length ?? 0,
+        };
+        
+        // Add any custom traits from the user
+        const userTraits = user.traits || {};
+        Object.keys(userTraits).forEach(key => {
+          // Prefix custom traits with sf_ if not already
+          const prefixedKey = key.startsWith('sf_') ? key : `sf_${key}`;
+          behavioralProperties[prefixedKey] = userTraits[key];
+        });
+        
         const profile: KlaviyoProfile = {
           type: 'profile',
           attributes: {
             email: user.primary_email || undefined,
             phone_number: user.phone || undefined,
             external_id: user.id,
-            properties: {
-              sf_unified_user_id: user.id,
-              sf_first_seen_at: user.first_seen_at,
-              sf_last_seen_at: user.last_seen_at,
-              ...user.traits,
-              ...user.computed,
-            },
+            properties: behavioralProperties,
           },
         };
         result = await upsertKlaviyoProfile(klaviyoApiKey, profile);
+        
       } else if (job.job_type === 'event_track' && job.event) {
         const event = job.event;
         const user = job.unified_user;
         
-        // Map SignalForge events to Klaviyo events
+        // Enhanced event name mapping for Klaviyo
         const eventNameMap: Record<string, string> = {
-          'page_view': 'SF Page View',
-          'view_item': 'SF Viewed Product',
-          'add_to_cart': 'SF Added to Cart',
-          'begin_checkout': 'SF Started Checkout',
-          'purchase': 'SF Placed Order',
+          // Page events
+          'Page View': 'SF Page View',
+          'Session Start': 'SF Session Start',
+          'Scroll Depth': 'SF Scroll Depth',
+          'Time on Page': 'SF Time on Page',
+          'Exit Intent': 'SF Exit Intent',
+          
+          // Product events
+          'Product Viewed': 'SF Viewed Product',
+          'View Item': 'SF Viewed Product',
+          'View Category': 'SF Viewed Category',
+          'Product Click': 'SF Product Click',
+          'Search': 'SF Search',
+          
+          // Cart events
+          'Add to Cart': 'SF Added to Cart',
+          'Remove from Cart': 'SF Removed from Cart',
+          'Update Cart': 'SF Updated Cart',
+          'Cart Viewed': 'SF Viewed Cart',
+          
+          // Checkout events
+          'Begin Checkout': 'SF Started Checkout',
+          'Checkout Customer': 'SF Checkout Customer',
+          
+          // Order events
+          'Purchase': 'SF Placed Order',
+          
+          // Form events
+          'Form Viewed': 'SF Form Viewed',
+          'Form Submitted': 'SF Form Submitted',
+          'Newsletter Intent': 'SF Newsletter Intent',
         };
         
-        const klaviyoEventName = eventNameMap[event.event_type] || `SF ${event.event_name}`;
+        const eventKey = event.event_name || event.event_type;
+        const klaviyoEventName = eventNameMap[eventKey] || `SF ${eventKey}`;
+        
+        // Enrich event properties with behavioral context
+        const enrichedProperties = {
+          ...(event.properties as Record<string, unknown>),
+          sf_event_id: event.id,
+          sf_session_id: event.session_id,
+          sf_anonymous_id: event.anonymous_id,
+          sf_event_source: event.source,
+        };
         
         const klaviyoEvent: KlaviyoEvent = {
           type: 'event',
@@ -239,12 +318,46 @@ Deno.serve(async (req) => {
                 },
               },
             },
-            properties: event.properties as Record<string, unknown>,
+            properties: enrichedProperties,
             time: event.event_time,
             unique_id: event.id,
           },
         };
         result = await trackKlaviyoEvent(klaviyoApiKey, klaviyoEvent);
+        
+      } else if (job.job_type === 'event_sync') {
+        // Legacy event_sync job type - handle payload directly
+        const payload = job.payload as Record<string, unknown>;
+        const user = job.unified_user;
+        
+        const eventName = (payload.event_name as string) || (payload.event_type as string) || 'Unknown Event';
+        
+        const klaviyoEvent: KlaviyoEvent = {
+          type: 'event',
+          attributes: {
+            metric: {
+              data: {
+                type: 'metric',
+                attributes: {
+                  name: `SF ${eventName}`,
+                },
+              },
+            },
+            profile: {
+              data: {
+                type: 'profile',
+                attributes: {
+                  email: user?.primary_email || undefined,
+                  external_id: user?.id,
+                },
+              },
+            },
+            properties: (payload.properties as Record<string, unknown>) || {},
+            time: new Date().toISOString(),
+          },
+        };
+        result = await trackKlaviyoEvent(klaviyoApiKey, klaviyoEvent);
+        
       } else {
         result = { success: false, error: 'Unknown job type or missing data' };
       }

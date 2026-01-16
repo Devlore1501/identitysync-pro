@@ -40,7 +40,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   // Use the key for snippet display and verification
   const snippetKey = hasFullKey ? apiKey : displayKey;
 
-  const snippet = `<!-- SignalForge Tracking Snippet - Full Funnel Tracking -->
+  const snippet = `<!-- SignalForge Tracking Snippet - Behavioral Intelligence -->
 <script>
 (function(w,d,s,l,i){
   w.SignalForge=w.SignalForge||[];
@@ -49,45 +49,65 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   w._sfCollect='${collectUrl}';
   w._sfIdentify='${identifyUrl}';
   
-  // Generate anonymous ID
+  // Generate anonymous ID (persistent)
   var aid=localStorage.getItem('sf_aid');
-  if(!aid){aid='anon_'+Math.random().toString(36).substr(2,9)+Date.now().toString(36);localStorage.setItem('sf_aid',aid)}
+  if(!aid){
+    aid='anon_'+Math.random().toString(36).substr(2,9)+Date.now().toString(36);
+    localStorage.setItem('sf_aid',aid);
+    localStorage.setItem('sf_first_seen',new Date().toISOString());
+  }
   w._sfAid=aid;
   
-  // Session ID
+  // Session ID (per session)
   var sid=sessionStorage.getItem('sf_sid');
-  if(!sid){sid='sess_'+Math.random().toString(36).substr(2,9)+Date.now().toString(36);sessionStorage.setItem('sf_sid',sid)}
+  var isNewSession=!sid;
+  if(!sid){
+    sid='sess_'+Math.random().toString(36).substr(2,9)+Date.now().toString(36);
+    sessionStorage.setItem('sf_sid',sid);
+    // Increment session count
+    var sc=parseInt(localStorage.getItem('sf_session_count')||'0')+1;
+    localStorage.setItem('sf_session_count',sc.toString());
+  }
   w._sfSid=sid;
+  w._sfSessionCount=parseInt(localStorage.getItem('sf_session_count')||'1');
+  w._sfIsReturning=!!localStorage.getItem('sf_first_seen')&&w._sfSessionCount>1;
   
   // Get Facebook cookies for CAPI
   function getCookie(n){var v='; '+document.cookie;var p=v.split('; '+n+'=');if(p.length===2)return p.pop().split(';').shift()}
   w._sfFbp=getCookie('_fbp')||'';
   w._sfFbc=getCookie('_fbc')||'';
   
-  // Track function
+  // Track function with behavioral context
   w.sfTrack=function(event,props){
+    var payload={
+      event:event,
+      properties:Object.assign({},props||{},{
+        session_number:w._sfSessionCount,
+        is_returning_visitor:w._sfIsReturning
+      }),
+      context:{
+        anonymous_id:w._sfAid,
+        session_id:w._sfSid,
+        user_agent:navigator.userAgent,
+        locale:navigator.language,
+        page:{url:location.href,title:document.title,referrer:document.referrer},
+        screen:{width:screen.width,height:screen.height},
+        fbp:w._sfFbp,
+        fbc:w._sfFbc
+      },
+      timestamp:new Date().toISOString()
+    };
     fetch(w._sfCollect,{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':w._sfKey},
-      body:JSON.stringify({
-        event:event,
-        properties:props||{},
-        context:{
-          anonymous_id:w._sfAid,
-          session_id:w._sfSid,
-          user_agent:navigator.userAgent,
-          locale:navigator.language,
-          page:{url:location.href,title:document.title,referrer:document.referrer},
-          fbp:w._sfFbp,
-          fbc:w._sfFbc
-        },
-        timestamp:new Date().toISOString()
-      })
+      body:JSON.stringify(payload)
     }).catch(function(e){console.warn('SignalForge:',e)});
   };
   
   // Identify function  
   w.sfIdentify=function(email,traits){
+    if(!email||!email.includes('@'))return;
+    localStorage.setItem('sf_identified_email',email);
     fetch(w._sfIdentify,{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':w._sfKey},
@@ -99,8 +119,26 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     }).catch(function(e){console.warn('SignalForge:',e)});
   };
   
-  // Auto-track page views
-  w.sfTrack('Page View',{path:location.pathname});
+  // === SESSION START TRACKING (new session only) ===
+  if(isNewSession){
+    w.sfTrack('Session Start',{
+      session_number:w._sfSessionCount,
+      is_returning:w._sfIsReturning,
+      first_seen:localStorage.getItem('sf_first_seen'),
+      landing_page:location.pathname
+    });
+  }
+  
+  // === PAGE VIEW with enhanced context ===
+  w.sfTrack('Page View',{
+    path:location.pathname,
+    query:location.search,
+    page_type:location.pathname.includes('/products/')?'product':
+              location.pathname.includes('/collections/')?'collection':
+              location.pathname.includes('/cart')?'cart':
+              location.pathname.includes('/checkout')?'checkout':
+              location.pathname==='/'?'homepage':'other'
+  });
   
   // === SCROLL DEPTH TRACKING ===
   var scrollMilestones={25:false,50:false,75:false,100:false};
@@ -120,14 +158,14 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     scrollTimer=setTimeout(trackScroll,200);
   });
   
-  // === TIME ON PAGE ===
+  // === TIME ON PAGE (engagement tracking) ===
   var timeOnPage=0;
   var timeInterval=setInterval(function(){
     timeOnPage+=1;
-    if(timeOnPage===30||timeOnPage===60||timeOnPage===120){
-      w.sfTrack('Time on Page',{seconds:timeOnPage,path:location.pathname});
+    if(timeOnPage===30||timeOnPage===60||timeOnPage===120||timeOnPage===300){
+      w.sfTrack('Time on Page',{seconds:timeOnPage,path:location.pathname,engaged:true});
     }
-    if(timeOnPage>=120)clearInterval(timeInterval);
+    if(timeOnPage>=300)clearInterval(timeInterval);
   },1000);
   
   // === EXIT INTENT ===
@@ -135,7 +173,11 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   document.addEventListener('mouseout',function(e){
     if(!exitTracked&&e.clientY<10){
       exitTracked=true;
-      w.sfTrack('Exit Intent',{path:location.pathname});
+      w.sfTrack('Exit Intent',{
+        path:location.pathname,
+        time_on_page:timeOnPage,
+        scroll_depth:Math.max.apply(null,Object.keys(scrollMilestones).filter(function(k){return scrollMilestones[k]}).map(Number))||0
+      });
     }
   });
   
@@ -143,40 +185,72 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   if(w.Shopify){
     var currency=w.Shopify.currency?w.Shopify.currency.active:'USD';
     
-    // Collection view
+    // === COLLECTION/CATEGORY VIEW ===
     if(location.pathname.includes('/collections/')&&!location.pathname.includes('/products/')){
-      var collHandle=location.pathname.split('/collections/')[1]?.split('/')[0]||'';
-      w.sfTrack('View Collection',{collection_handle:collHandle,url:location.href});
-    }
-    
-    // Product view (on product pages)
-    if(w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.product){
-      var p=w.ShopifyAnalytics.meta.product;
-      w.sfTrack('View Item',{
-        product_id:p.id,
-        product_name:p.type,
-        variant_id:p.variants?p.variants[0].id:null,
-        price:p.variants?p.variants[0].price/100:0,
-        currency:currency
+      var collHandle=location.pathname.split('/collections/')[1]?.split('/')[0]?.split('?')[0]||'';
+      var collTitle=document.querySelector('h1')?.textContent?.trim()||collHandle;
+      w.sfTrack('View Category',{
+        collection_handle:collHandle,
+        category:collHandle,
+        category_name:collTitle,
+        url:location.href
       });
     }
     
-    // Search tracking
-    if(location.pathname.includes('/search')){
-      var q=new URLSearchParams(location.search).get('q')||'';
-      w.sfTrack('Search',{query:q,url:location.href});
+    // === PRODUCT VIEW (enhanced with category) ===
+    if(w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.product){
+      var p=w.ShopifyAnalytics.meta.product;
+      // Track products viewed for depth calculation
+      var viewedProducts=JSON.parse(localStorage.getItem('sf_viewed_products')||'[]');
+      if(!viewedProducts.includes(p.id.toString())){
+        viewedProducts.push(p.id.toString());
+        localStorage.setItem('sf_viewed_products',JSON.stringify(viewedProducts.slice(-50)));
+      }
+      
+      w.sfTrack('Product Viewed',{
+        product_id:p.id,
+        product_name:p.title||p.type,
+        product_handle:location.pathname.split('/products/')[1]?.split('?')[0]||'',
+        product_type:p.type,
+        vendor:p.vendor,
+        category:p.type||p.vendor,
+        collection_handle:document.querySelector('[data-collection-handle]')?.dataset?.collectionHandle||'',
+        variant_id:p.variants?p.variants[0]?.id:null,
+        price:p.variants?(p.variants[0]?.price||0)/100:0,
+        currency:currency,
+        total_products_viewed:viewedProducts.length
+      });
     }
     
-    // Product click tracking (on collection pages)
+    // === SEARCH TRACKING ===
+    if(location.pathname.includes('/search')){
+      var q=new URLSearchParams(location.search).get('q')||'';
+      w.sfTrack('Search',{
+        query:q,
+        url:location.href,
+        results_count:document.querySelectorAll('[data-product-id]').length||
+                      document.querySelectorAll('.product-card,.product-item').length||0
+      });
+    }
+    
+    // === PRODUCT CLICK from listings ===
     document.querySelectorAll('a[href*="/products/"]').forEach(function(link){
       link.addEventListener('click',function(){
         var href=link.getAttribute('href')||'';
         var handle=href.split('/products/')[1]?.split('?')[0]||'';
-        w.sfTrack('Product Click',{product_handle:handle,from_url:location.href});
+        var currentColl=location.pathname.includes('/collections/')?
+          location.pathname.split('/collections/')[1]?.split('/')[0]:'';
+        w.sfTrack('Product Click',{
+          product_handle:handle,
+          from_url:location.href,
+          from_collection:currentColl,
+          from_page_type:location.pathname.includes('/collections/')?'collection':
+                         location.pathname.includes('/search')?'search':'other'
+        });
       });
     });
     
-    // Hook fetch for cart operations
+    // === CART OPERATIONS (fetch hook) ===
     var origFetch=w.fetch;
     w.fetch=function(url,opts){
       if(url){
@@ -184,7 +258,12 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         if(url.includes('/cart/add')){
           try{
             var body=opts&&opts.body?JSON.parse(opts.body):{};
-            w.sfTrack('Add to Cart',{product_id:body.id,quantity:body.quantity||1,currency:currency});
+            w.sfTrack('Add to Cart',{
+              product_id:body.id,
+              quantity:body.quantity||1,
+              currency:currency,
+              properties:body.properties||{}
+            });
           }catch(e){}
         }
         // Remove from Cart
@@ -193,6 +272,8 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
             var body=opts&&opts.body?JSON.parse(opts.body):{};
             if(body.quantity===0){
               w.sfTrack('Remove from Cart',{line:body.line,currency:currency});
+            }else{
+              w.sfTrack('Update Cart',{line:body.line,quantity:body.quantity,currency:currency});
             }
           }catch(e){}
         }
@@ -200,28 +281,45 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
       return origFetch.apply(this,arguments);
     };
     
-    // Cart viewed (mini cart / drawer)
-    document.querySelectorAll('[href="/cart"],[data-cart-toggle],[class*="cart-icon"]').forEach(function(el){
-      el.addEventListener('click',function(){w.sfTrack('Cart Viewed',{currency:currency});});
+    // === CART VIEWED ===
+    document.querySelectorAll('[href="/cart"],[data-cart-toggle],[class*="cart-icon"],[class*="cart-drawer"]').forEach(function(el){
+      el.addEventListener('click',function(){
+        w.sfTrack('Cart Viewed',{currency:currency,trigger:'click'});
+      });
     });
+    if(location.pathname==='/cart'){
+      w.sfTrack('Cart Viewed',{currency:currency,trigger:'page_load'});
+    }
     
-    // Checkout start + email capture
+    // === CHECKOUT TRACKING ===
     if(location.pathname.includes('/checkout')){
-      w.sfTrack('Begin Checkout',{url:location.href,currency:currency});
+      w.sfTrack('Begin Checkout',{
+        url:location.href,
+        currency:currency,
+        step:location.pathname.includes('/information')?'information':
+             location.pathname.includes('/shipping')?'shipping':
+             location.pathname.includes('/payment')?'payment':'started'
+      });
       
-      // Capture email from checkout input field
-      var emailInput=document.querySelector('input[name="email"],input[type="email"],#checkout_email');
+      // Email capture from checkout
+      var emailInput=document.querySelector('input[name="email"],input[type="email"],#checkout_email,#email');
       if(emailInput){
+        // Capture on blur
         emailInput.addEventListener('blur',function(){
           var email=emailInput.value;
           if(email&&email.includes('@')){
             localStorage.setItem('sf_checkout_email',email);
-            w.sfIdentify(email,{source:'checkout_form'});
+            w.sfIdentify(email,{source:'checkout_form',checkout_step:'email_entered'});
           }
         });
+        // Check if already filled
+        if(emailInput.value&&emailInput.value.includes('@')){
+          localStorage.setItem('sf_checkout_email',emailInput.value);
+          w.sfIdentify(emailInput.value,{source:'checkout_form'});
+        }
       }
       
-      // Also try to get from Shopify customer if logged in
+      // Customer ID from Shopify
       if(w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.page){
         var custId=w.ShopifyAnalytics.meta.page.customerId;
         if(custId){
@@ -230,7 +328,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
       }
     }
     
-    // Thank you page (purchase complete)
+    // === PURCHASE (Thank you page) ===
     if(location.pathname.includes('/thank_you')||location.pathname.includes('/orders/')){
       if(w.Shopify.checkout){
         var c=w.Shopify.checkout;
@@ -240,31 +338,54 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
           order_id:c.order_id,
           total:c.total_price/100,
           subtotal:c.subtotal_price/100,
+          tax:c.total_tax/100,
+          shipping:(c.shipping_rate?c.shipping_rate.price/100:0),
           currency:c.currency||'USD',
           email:checkoutEmail,
           customer_id:c.customer_id||null,
+          discount_code:c.discount?c.discount.code:'',
+          discount_amount:c.discount?c.discount.amount/100:0,
+          item_count:c.line_items?c.line_items.length:0,
           line_items:c.line_items?c.line_items.map(function(i){
-            return{product_id:i.product_id,variant_id:i.variant_id,quantity:i.quantity,price:i.price/100,name:i.title}
+            return{
+              product_id:i.product_id,
+              variant_id:i.variant_id,
+              quantity:i.quantity,
+              price:i.price/100,
+              name:i.title,
+              sku:i.sku
+            }
           }):[]
         });
         
+        // Identify with purchase data
         if(checkoutEmail){
           w.sfIdentify(checkoutEmail,{
             first_name:c.billing_address?c.billing_address.first_name:'',
             last_name:c.billing_address?c.billing_address.last_name:'',
             customer_id:c.customer_id||null,
             order_id:c.order_id,
-            total_spent:c.total_price/100,
-            source:'shopify_checkout'
+            last_order_total:c.total_price/100,
+            source:'purchase_complete'
           });
           localStorage.removeItem('sf_checkout_email');
         }
       }
     }
     
-    // Try to capture email from Shopify customer session
+    // === CUSTOMER SESSION (logged in users) ===
     if(w.__st&&w.__st.cid){
-      w.sfTrack('Customer Session',{customer_id:w.__st.cid});
+      w.sfTrack('Customer Session',{customer_id:w.__st.cid,logged_in:true});
+    }
+    // Try ShopifyAnalytics for customer data
+    if(w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.page){
+      var pg=w.ShopifyAnalytics.meta.page;
+      if(pg.customerId){
+        var customerEmail=localStorage.getItem('sf_identified_email');
+        if(customerEmail){
+          w.sfIdentify(customerEmail,{customer_id:pg.customerId,source:'shopify_session'});
+        }
+      }
     }
   }
   
@@ -272,7 +393,9 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   // Klaviyo
   if(w._klOnsite){
     try{
-      w._klOnsite.push(['openForm',function(){w.sfTrack('Form Viewed',{form_type:'popup',provider:'klaviyo'})}]);
+      w._klOnsite.push(['openForm',function(f){
+        w.sfTrack('Form Viewed',{form_type:'popup',provider:'klaviyo',form_id:f?.formId||''});
+      }]);
       w._klOnsite.push(['submitForm',function(e){
         w.sfTrack('Form Submitted',{form_type:'popup',provider:'klaviyo',email:e.email||''});
         if(e.email)w.sfIdentify(e.email,{source:'klaviyo_popup'});
@@ -288,6 +411,16 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
       });
     }catch(e){}
   }
+  // Justuno
+  if(w.juapp){
+    try{
+      w.juapp('onConversion',function(e){
+        w.sfTrack('Form Submitted',{form_type:'popup',provider:'justuno'});
+        if(e.email)w.sfIdentify(e.email,{source:'justuno_popup'});
+      });
+    }catch(e){}
+  }
+  
   // Generic form tracking
   document.querySelectorAll('form').forEach(function(form){
     form.addEventListener('submit',function(){
@@ -297,6 +430,19 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         w.sfIdentify(email.value,{source:'form_submit'});
       }
     });
+  });
+  
+  // === NEWSLETTER FOOTER TRACKING ===
+  var footerForms=document.querySelectorAll('footer form,form[action*="subscribe"],form[class*="newsletter"]');
+  footerForms.forEach(function(form){
+    var emailField=form.querySelector('input[type="email"]');
+    if(emailField){
+      emailField.addEventListener('blur',function(){
+        if(emailField.value&&emailField.value.includes('@')){
+          w.sfTrack('Newsletter Intent',{email:emailField.value,location:'footer'});
+        }
+      });
+    }
   });
   
 })(window,document,'script','sf','${snippetKey}');

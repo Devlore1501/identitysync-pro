@@ -683,6 +683,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      decay_recency_scores: { Args: never; Returns: number }
       get_user_account_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {
@@ -717,6 +718,10 @@ export type Database = {
           is_duplicate: boolean
           unified_user_id: string
         }[]
+      }
+      recompute_behavioral_signals_batch: {
+        Args: { p_limit?: number }
+        Returns: number
       }
       resolve_identity: {
         Args: {
