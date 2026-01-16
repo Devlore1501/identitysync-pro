@@ -8,8 +8,10 @@ import { corsHeaders } from '../_shared/cors.ts';
  * 
  * STRATEGY:
  * 1. ALWAYS update profile properties (sf_*) for users WITH email
- * 2. Only track HIGH-VALUE events as Klaviyo events
- * 3. Block noise events from event tracking (but still update profiles!)
+ * 2. FORCE profile upsert when checkout_abandoned detected
+ * 3. Only track HIGH-VALUE events as Klaviyo events
+ * 4. Block noise events from event tracking (but still update profiles!)
+ * 5. Use decisional flags to avoid duplicate syncs
  */
 
 // ===== HIGH-VALUE EVENTS THAT TRIGGER KLAVIYO EVENT TRACKING =====
@@ -19,7 +21,7 @@ const HIGH_VALUE_EVENTS = new Set([
   'Product Added',
   'Cart Viewed',
   
-  // Checkout events (high intent) - FIXED: Added all variants
+  // Checkout events (high intent) - All variants
   'Begin Checkout',
   'Checkout Started',
   'Started Checkout',
@@ -102,9 +104,11 @@ interface KlaviyoEvent {
   };
 }
 
-async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Promise<{ success: boolean; error?: string; profileId?: string }> {
-  console.log(`[Klaviyo] Upserting profile: ${profile.attributes.email}`);
-  console.log(`[Klaviyo] Properties: ${JSON.stringify(Object.keys(profile.attributes.properties || {}))}`);
+async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile, forcedReason?: string): Promise<{ success: boolean; error?: string; profileId?: string }> {
+  const logPrefix = forcedReason ? `[SYNC][FORCED:${forcedReason}]` : '[SYNC]';
+  console.log(`${logPrefix} Klaviyo profile upsert`);
+  console.log(`${logPrefix} email=${profile.attributes.email}`);
+  console.log(`${logPrefix} properties=[${Object.keys(profile.attributes.properties || {}).filter(k => k.startsWith('sf_')).join(', ')}]`);
   
   const response = await fetch('https://a.klaviyo.com/api/profiles/', {
     method: 'POST',
@@ -122,7 +126,7 @@ async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Pr
     const profileId = existing?.errors?.[0]?.meta?.duplicate_profile_id;
     
     if (profileId) {
-      console.log(`[Klaviyo] Profile exists (${profileId}), updating...`);
+      console.log(`${logPrefix} Profile exists (${profileId}), updating...`);
       const updateResponse = await fetch(`https://a.klaviyo.com/api/profiles/${profileId}`, {
         method: 'PATCH',
         headers: {
@@ -135,10 +139,10 @@ async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Pr
       
       if (!updateResponse.ok) {
         const error = await updateResponse.text();
-        console.error(`[Klaviyo] Update failed: ${error}`);
+        console.error(`${logPrefix} Update failed: ${error}`);
         return { success: false, error };
       }
-      console.log(`[Klaviyo] Profile updated successfully`);
+      console.log(`${logPrefix} Profile updated successfully`);
       return { success: true, profileId };
     }
     return { success: true };
@@ -146,17 +150,17 @@ async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Pr
 
   if (!response.ok) {
     const error = await response.text();
-    console.error(`[Klaviyo] Create failed: ${error}`);
+    console.error(`${logPrefix} Create failed: ${error}`);
     return { success: false, error };
   }
 
   const result = await response.json();
-  console.log(`[Klaviyo] Profile created successfully`);
+  console.log(`${logPrefix} Profile created successfully`);
   return { success: true, profileId: result?.data?.id };
 }
 
 async function trackKlaviyoEvent(apiKey: string, event: KlaviyoEvent): Promise<{ success: boolean; error?: string }> {
-  console.log(`[Klaviyo] Tracking event: ${event.attributes.metric.data.attributes.name} for ${event.attributes.profile.data.attributes.email}`);
+  console.log(`[SYNC] Tracking event: ${event.attributes.metric.data.attributes.name} for ${event.attributes.profile.data.attributes.email}`);
   
   const response = await fetch('https://a.klaviyo.com/api/events/', {
     method: 'POST',
@@ -170,11 +174,11 @@ async function trackKlaviyoEvent(apiKey: string, event: KlaviyoEvent): Promise<{
 
   if (!response.ok) {
     const error = await response.text();
-    console.error(`[Klaviyo] Event tracking failed: ${error}`);
+    console.error(`[SYNC] Event tracking failed: ${error}`);
     return { success: false, error };
   }
 
-  console.log(`[Klaviyo] Event tracked successfully`);
+  console.log(`[SYNC] Event tracked successfully`);
   return { success: true };
 }
 
@@ -224,7 +228,8 @@ function mapEventName(eventName: string): string {
 }
 
 /**
- * Determine drop-off stage from event history
+ * Determine drop-off stage from event history and computed traits
+ * Returns a DECISIONAL drop_off_stage value
  */
 function determineDropOffStage(computed: Record<string, unknown>, eventType?: string, eventName?: string): string {
   // If they completed a purchase, they're not in a drop-off stage
@@ -232,7 +237,7 @@ function determineDropOffStage(computed: Record<string, unknown>, eventType?: st
     return 'purchased';
   }
   
-  // Check based on current event
+  // Check based on current event (highest priority)
   if (eventType === 'checkout' || eventName?.toLowerCase().includes('checkout')) {
     return 'checkout_abandoned';
   }
@@ -241,18 +246,18 @@ function determineDropOffStage(computed: Record<string, unknown>, eventType?: st
     return 'cart_abandoned';
   }
   
-  // Check existing drop_off_stage
-  if (computed.drop_off_stage) {
-    return computed.drop_off_stage as string;
-  }
-  
-  // Check computed values
+  // Check existing computed values
   if (computed.checkout_abandoned_at) {
     return 'checkout_abandoned';
   }
   
   if (computed.cart_abandoned_at) {
     return 'cart_abandoned';
+  }
+  
+  // Check existing drop_off_stage
+  if (computed.drop_off_stage) {
+    return computed.drop_off_stage as string;
   }
   
   // Default based on engagement
@@ -265,8 +270,35 @@ function determineDropOffStage(computed: Record<string, unknown>, eventType?: st
 }
 
 /**
+ * Check if this user needs a FORCED profile sync
+ * Returns reason string if forced, null otherwise
+ */
+function shouldForceProfileSync(computed: Record<string, unknown>, flags: Record<string, unknown>): string | null {
+  const dropOffStage = computed.drop_off_stage || determineDropOffStage(computed);
+  
+  // FORCE SYNC: checkout_abandoned but never synced
+  if (dropOffStage === 'checkout_abandoned' && !flags.checkout_abandoned_synced) {
+    return 'checkout_abandoned';
+  }
+  
+  // FORCE SYNC: cart_abandoned but never synced
+  if (dropOffStage === 'cart_abandoned' && !flags.cart_abandoned_synced) {
+    return 'cart_abandoned';
+  }
+  
+  // FORCE SYNC: first time seeing this user
+  if (!flags.first_sync_completed) {
+    return 'first_sync';
+  }
+  
+  return null;
+}
+
+/**
  * Build behavioral profile properties from computed traits
  * These are synced to Klaviyo on EVERY event (not just high-value ones)
+ * 
+ * CRITICAL: These properties MUST always be sent to create them in Klaviyo
  */
 function buildBehavioralProperties(user: {
   id: string;
@@ -280,13 +312,14 @@ function buildBehavioralProperties(user: {
   const computed = user.computed || {};
   const now = new Date().toISOString();
   
-  // Determine drop-off stage
+  // Determine drop-off stage (DECISIONAL)
   const dropOffStage = determineDropOffStage(computed, eventType, eventName);
   
   // Set abandonment timestamps based on stage
   let checkoutAbandonedAt = computed.checkout_abandoned_at ?? null;
   let cartAbandonedAt = computed.cart_abandoned_at ?? null;
   
+  // CRITICAL: Set timestamp when stage is detected
   if (dropOffStage === 'checkout_abandoned' && !checkoutAbandonedAt) {
     checkoutAbandonedAt = now;
   }
@@ -298,7 +331,7 @@ function buildBehavioralProperties(user: {
     // === IDENTIFICATION ===
     sf_unified_user_id: user.id,
     sf_first_seen_at: user.first_seen_at,
-    sf_last_seen_at: user.last_seen_at,
+    sf_last_seen_at: now, // Always update to current time
     
     // === CORE BEHAVIORAL SCORES ===
     sf_intent_score: computed.intent_score ?? 0,
@@ -308,7 +341,7 @@ function buildBehavioralProperties(user: {
     
     // === BEHAVIORAL SIGNALS (KEY FOR FLOWS!) ===
     sf_top_category: computed.top_category_30d ?? computed.top_category ?? null,
-    sf_drop_off_stage: dropOffStage,
+    sf_dropoff_stage: dropOffStage, // CRITICAL: This triggers flows!
     
     // === ENGAGEMENT COUNTS ===
     sf_viewed_products_7d: computed.unique_products_viewed ?? computed.product_views_7d ?? 0,
@@ -388,8 +421,10 @@ Deno.serve(async (req) => {
     let failCount = 0;
     let skippedCount = 0;
     let profileUpdates = 0;
+    let profileUpdatesForced = 0;
     let eventsSent = 0;
     let eventsBlocked = 0;
+    let flagsUpdated = 0;
 
     for (const job of jobs) {
       // Mark as running
@@ -454,22 +489,66 @@ Deno.serve(async (req) => {
       // Get event details for context
       const eventName = event?.event_name || event?.event_type || '';
       const eventType = event?.event_type || '';
+      
+      // Get user flags for decisional logic
+      const computed = (user.computed || {}) as Record<string, unknown>;
+      const flags = (computed.flags || {}) as Record<string, unknown>;
+      
+      // Check if forced sync is needed
+      const forceReason = shouldForceProfileSync(computed, flags);
 
       // ===== STEP 1: ALWAYS UPDATE PROFILE =====
       // This ensures sf_* properties are ALWAYS synced to Klaviyo
+      const behavioralProps = buildBehavioralProperties(user, eventType, eventName);
+      
       const profile: KlaviyoProfile = {
         type: 'profile',
         attributes: {
           email: user.primary_email,
           phone_number: user.phone || undefined,
           external_id: user.id,
-          properties: buildBehavioralProperties(user, eventType, eventName),
+          properties: behavioralProps,
         },
       };
       
-      profileResult = await upsertKlaviyoProfile(klaviyoApiKey, profile);
+      profileResult = await upsertKlaviyoProfile(klaviyoApiKey, profile, forceReason || undefined);
+      
       if (profileResult.success) {
         profileUpdates++;
+        if (forceReason) {
+          profileUpdatesForced++;
+          console.log(`[DECISION] Forced profile sync: ${forceReason} for ${user.primary_email}`);
+        }
+        
+        // Update flags to mark sync completed
+        const updatedFlags: Record<string, unknown> = { ...flags, first_sync_completed: true };
+        const dropOffStage = behavioralProps.sf_dropoff_stage;
+        
+        if (dropOffStage === 'checkout_abandoned') {
+          updatedFlags.checkout_abandoned_synced = true;
+          updatedFlags.checkout_abandoned_synced_at = new Date().toISOString();
+        }
+        if (dropOffStage === 'cart_abandoned') {
+          updatedFlags.cart_abandoned_synced = true;
+          updatedFlags.cart_abandoned_synced_at = new Date().toISOString();
+        }
+        
+        // Persist flags and computed updates
+        const updatedComputed = {
+          ...computed,
+          flags: updatedFlags,
+          drop_off_stage: dropOffStage,
+          checkout_abandoned_at: behavioralProps.sf_checkout_abandoned_at,
+          cart_abandoned_at: behavioralProps.sf_cart_abandoned_at,
+          last_synced_at: new Date().toISOString(),
+        };
+        
+        await supabase
+          .from('users_unified')
+          .update({ computed: updatedComputed })
+          .eq('id', user.id);
+        
+        flagsUpdated++;
       }
 
       // ===== STEP 2: CONDITIONALLY TRACK EVENT =====
@@ -482,8 +561,8 @@ Deno.serve(async (req) => {
             ...(event.properties as Record<string, unknown>),
             sf_event_id: event.id,
             sf_session_id: event.session_id,
-            sf_intent_score: user.computed?.intent_score ?? 0,
-            sf_drop_off_stage: determineDropOffStage(user.computed || {}, eventType, eventName),
+            sf_intent_score: computed.intent_score ?? 0,
+            sf_dropoff_stage: behavioralProps.sf_dropoff_stage,
           };
           
           const klaviyoEvent: KlaviyoEvent = {
@@ -518,7 +597,7 @@ Deno.serve(async (req) => {
           // Event blocked from tracking (but profile was still updated!)
           eventBlocked = true;
           eventsBlocked++;
-          console.log(`[sync-klaviyo] Event blocked from tracking: ${eventName} (profile still updated)`);
+          console.log(`[SYNC] Event blocked from tracking: ${eventName} (profile still updated)`);
         }
       }
 
@@ -589,9 +668,11 @@ Deno.serve(async (req) => {
       failed: failCount,
       skipped: skippedCount,
       profileUpdates,
+      profileUpdatesForced,
       eventsSent,
       eventsBlocked,
-      note: 'Profile properties (sf_*) are ALWAYS updated. Only high-value events are tracked.',
+      flagsUpdated,
+      note: 'Profile properties (sf_*) are ALWAYS updated. Forced syncs ensure abandonment properties exist.',
     };
     
     console.log('[sync-klaviyo] Summary:', JSON.stringify(summary));

@@ -4,14 +4,18 @@ import { corsHeaders } from '../_shared/cors.ts';
 /**
  * Background Processor Edge Function
  * 
- * Runs periodically to:
- * 1. Recalculate abandonment windows (cart/checkout abandoned)
- * 2. Update recency decay for all users
- * 3. Recompute behavioral signals for active users
- * 4. Schedule profile syncs for users with updated computed traits
- * 5. Poll Klaviyo for email engagement events (bidirectional sync)
+ * FASI DISTINTE CON LOG ESPLICITI:
+ * [COMPUTE] - Calcolo segnali comportamentali
+ * [DECISION] - Decisioni basate sui segnali
+ * [SYNC] - Schedulazione sync verso Klaviyo
  * 
- * Should be called via pg_cron or external scheduler every 5 minutes
+ * Tasks:
+ * 1. Detect cart/checkout abandonment
+ * 2. Update recency decay
+ * 3. Recompute behavioral signals
+ * 4. IDENTITY BACKFILL - Retro-assegnazione eventi quando arriva email
+ * 5. Schedule profile syncs with decisional flags
+ * 6. Poll Klaviyo for email engagement events
  */
 
 // Klaviyo metrics we want to poll
@@ -31,6 +35,8 @@ interface ProcessingResult {
   profileSyncsScheduled: number;
   klaviyoEventsImported: number;
   klaviyoUsersUpdated: number;
+  identityBackfillEvents: number;
+  decisionsTriggered: number;
   errors: string[];
 }
 
@@ -105,6 +111,59 @@ async function fetchKlaviyoEvents(
   return { events: data.data || [], profiles, metrics };
 }
 
+// deno-lint-ignore no-explicit-any
+async function performIdentityBackfill(supabase: any, result: ProcessingResult, lookbackMinutes: number = 60): Promise<void> {
+  console.log('[DECISION] Starting identity backfill...');
+  
+  try {
+    // Find users who got email assigned in the last hour
+    const oneHourAgo = new Date(Date.now() - lookbackMinutes * 60 * 1000).toISOString();
+    
+    const { data: recentlyIdentifiedUsers, error: userError } = await supabase
+      .from('users_unified')
+      .select('id, primary_email, anonymous_ids, updated_at')
+      .not('primary_email', 'is', null)
+      .gt('updated_at', oneHourAgo)
+      .limit(100);
+    
+    if (userError || !recentlyIdentifiedUsers) {
+      console.log('[DECISION] No recently identified users found');
+      return;
+    }
+    
+    for (const user of recentlyIdentifiedUsers) {
+      // Check if there are anonymous events that could belong to this user
+      for (const anonId of user.anonymous_ids || []) {
+        // Find orphaned events with this anonymous_id but no unified_user_id
+        const { data: orphanedEvents, error: eventError } = await supabase
+          .from('events')
+          .select('id')
+          .eq('anonymous_id', anonId)
+          .is('unified_user_id', null)
+          .gt('event_time', new Date(Date.now() - lookbackMinutes * 60 * 1000).toISOString())
+          .limit(50);
+        
+        if (!eventError && orphanedEvents && orphanedEvents.length > 0) {
+          // Reassign events to this user
+          const eventIds = orphanedEvents.map((e: { id: string }) => e.id);
+          const { error: updateError } = await supabase
+            .from('events')
+            .update({ unified_user_id: user.id })
+            .in('id', eventIds);
+          
+          if (!updateError) {
+            result.identityBackfillEvents += eventIds.length;
+            console.log(`[DECISION] Identity backfill completed: events_reassigned=${eventIds.length} user=${user.primary_email}`);
+          }
+        }
+      }
+    }
+  } catch (e: unknown) {
+    result.errors.push(`Identity backfill: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// deno-lint-ignore no-explicit-any
 async function pollKlaviyoEvents(
   supabase: any,
   result: ProcessingResult,
@@ -118,12 +177,12 @@ async function pollKlaviyoEvents(
     .eq("enabled", true);
 
   if (destError || !destinations || destinations.length === 0) {
-    console.log('[Background Processor] No Klaviyo destinations to poll');
+    console.log('[SYNC] No Klaviyo destinations to poll');
     return;
   }
 
   const sinceTimestamp = new Date(Date.now() - lookbackMinutes * 60 * 1000).toISOString();
-  console.log(`[Background Processor] Polling Klaviyo events since ${sinceTimestamp}`);
+  console.log(`[SYNC] Polling Klaviyo events since ${sinceTimestamp}`);
 
   for (const destination of destinations) {
     const apiKey = destination.config?.api_key as string;
@@ -131,7 +190,7 @@ async function pollKlaviyoEvents(
 
     try {
       const { events, profiles, metrics } = await fetchKlaviyoEvents(apiKey, sinceTimestamp);
-      console.log(`[Background Processor] Workspace ${destination.workspace_id}: Found ${events.length} Klaviyo events`);
+      console.log(`[SYNC] Workspace ${destination.workspace_id}: Found ${events.length} Klaviyo events`);
 
       for (const event of events) {
         const profileId = event.relationships.profile?.data?.id;
@@ -186,6 +245,8 @@ async function pollKlaviyoEvents(
             last_klaviyo_event: metricName,
             last_klaviyo_event_at: event.attributes.datetime,
           };
+
+          console.log(`[COMPUTE] intent_score=${intentScore} email_engagement=${updatedComputed.email_engagement_score} user=${email}`);
 
           await supabase
             .from("users_unified")
@@ -257,6 +318,83 @@ async function pollKlaviyoEvents(
   }
 }
 
+// deno-lint-ignore no-explicit-any
+async function scheduleDecisionalSyncs(supabase: any, result: ProcessingResult, limit: number): Promise<void> {
+  console.log('[DECISION] Checking for decisional sync triggers...');
+  
+  try {
+    // Find users with checkout_abandoned who haven't been synced yet
+    const { data: usersNeedingSync, error: usersError } = await supabase
+      .from('users_unified')
+      .select('id, workspace_id, primary_email, computed')
+      .not('primary_email', 'is', null)
+      .or('computed->>drop_off_stage.eq.checkout_abandoned,computed->>drop_off_stage.eq.cart_abandoned')
+      .limit(limit);
+    
+    if (usersError || !usersNeedingSync) {
+      console.log('[DECISION] No users needing decisional sync');
+      return;
+    }
+    
+    for (const user of usersNeedingSync) {
+      const computed = (user.computed || {}) as Record<string, unknown>;
+      const flags = (computed.flags || {}) as Record<string, unknown>;
+      const dropOffStage = computed.drop_off_stage as string;
+      
+      // Check if already synced for this stage
+      const flagKey = `${dropOffStage}_synced`;
+      if (flags[flagKey]) {
+        continue;
+      }
+      
+      // Check if there's already a pending sync job
+      const { data: existingJob } = await supabase
+        .from('sync_jobs')
+        .select('id')
+        .eq('unified_user_id', user.id)
+        .in('status', ['pending', 'running'])
+        .limit(1)
+        .single();
+      
+      if (existingJob) {
+        continue;
+      }
+      
+      // Find Klaviyo destination for this workspace
+      const { data: destination } = await supabase
+        .from('destinations')
+        .select('id')
+        .eq('workspace_id', user.workspace_id)
+        .eq('type', 'klaviyo')
+        .eq('enabled', true)
+        .limit(1)
+        .single();
+      
+      if (!destination) {
+        continue;
+      }
+      
+      // Schedule forced sync
+      await supabase.from('sync_jobs').insert({
+        workspace_id: user.workspace_id,
+        destination_id: destination.id,
+        unified_user_id: user.id,
+        job_type: 'profile_upsert',
+        payload: { 
+          trigger: 'decisional_sync',
+          reason: dropOffStage,
+        },
+        status: 'pending',
+      });
+      
+      result.decisionsTriggered++;
+      console.log(`[DECISION] ${dropOffStage} detected -> sync triggered for ${user.primary_email}`);
+    }
+  } catch (e: unknown) {
+    result.errors.push(`Decisional sync: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -270,6 +408,8 @@ Deno.serve(async (req) => {
     profileSyncsScheduled: 0,
     klaviyoEventsImported: 0,
     klaviyoUsersUpdated: 0,
+    identityBackfillEvents: 0,
+    decisionsTriggered: 0,
     errors: [],
   };
 
@@ -282,19 +422,21 @@ Deno.serve(async (req) => {
     let limit = 100;
     let forceRecompute = false;
     let klaviyoLookbackMinutes = 15;
+    let identityBackfillMinutes = 60;
     try {
       const body = await req.json();
       limit = body.limit || 100;
       forceRecompute = body.force_recompute || false;
       klaviyoLookbackMinutes = body.klaviyo_lookback_minutes || 15;
+      identityBackfillMinutes = body.identity_backfill_minutes || 60;
     } catch {
       // No body or invalid JSON, use defaults
     }
 
-    console.log(`[Background Processor] Starting with limit=${limit}, force=${forceRecompute}`);
+    console.log(`[COMPUTE] Starting background processor with limit=${limit}, force=${forceRecompute}`);
 
     // =========================================================
-    // 1. DETECT CART ABANDONMENT (users with cart but no checkout in 30+ min)
+    // 1. [COMPUTE] DETECT CART ABANDONMENT
     // =========================================================
     try {
       const { data: cartAbandoners, error: cartError } = await supabase.rpc(
@@ -305,27 +447,27 @@ Deno.serve(async (req) => {
       if (cartError) {
         const { error: createError } = await supabase.rpc('create_abandonment_detection_functions');
         if (createError) {
-          console.warn('Could not create abandonment detection functions:', createError);
+          console.warn('[COMPUTE] Could not create abandonment detection functions:', createError);
         }
       } else if (cartAbandoners && cartAbandoners.length > 0) {
         result.abandonmentDetected += cartAbandoners.length;
-        console.log(`[Background Processor] Detected ${cartAbandoners.length} cart abandonments`);
+        console.log(`[COMPUTE] Detected ${cartAbandoners.length} cart abandonments`);
       }
     } catch (e: unknown) {
       result.errors.push(`Cart abandonment detection: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // =========================================================
-    // 2. DETECT CHECKOUT ABANDONMENT (users with checkout but no order in 30+ min)
+    // 2. [COMPUTE] DETECT CHECKOUT ABANDONMENT
     // =========================================================
     try {
       const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
       
       const { data: checkoutAbandoners, error: checkoutError } = await supabase
         .from('users_unified')
-        .select('id, computed')
+        .select('id, computed, primary_email')
         .is('computed->checkout_abandoned_at', null)
-        .in('computed->>drop_off_stage', ['checkout_abandoned'])
+        .not('primary_email', 'is', null)
         .limit(limit);
 
       if (!checkoutError && checkoutAbandoners) {
@@ -350,9 +492,14 @@ Deno.serve(async (req) => {
               .single();
 
             if (!hasOrder) {
-              const newComputed = { ...user.computed, checkout_abandoned_at: lastCheckout.event_time };
+              const newComputed = { 
+                ...user.computed, 
+                checkout_abandoned_at: lastCheckout.event_time,
+                drop_off_stage: 'checkout_abandoned',
+              };
               await supabase.from('users_unified').update({ computed: newComputed }).eq('id', user.id);
               result.abandonmentDetected++;
+              console.log(`[COMPUTE] intent_score=${(user.computed as Record<string, unknown>)?.intent_score || 0} dropoff_stage=checkout_abandoned user=${user.primary_email}`);
             }
           }
         }
@@ -362,7 +509,7 @@ Deno.serve(async (req) => {
     }
 
     // =========================================================
-    // 3. UPDATE RECENCY DECAY (for users not seen today)
+    // 3. [COMPUTE] UPDATE RECENCY DECAY
     // =========================================================
     try {
       const { data: recencyResult, error: recencyError } = await supabase.rpc('decay_recency_scores');
@@ -370,14 +517,14 @@ Deno.serve(async (req) => {
         result.errors.push(`Recency decay: ${recencyError.message}`);
       } else {
         result.recencyUpdated = recencyResult || 0;
-        console.log(`[Background Processor] Updated recency for ${result.recencyUpdated} users`);
+        console.log(`[COMPUTE] Updated recency for ${result.recencyUpdated} users`);
       }
     } catch (e: unknown) {
       result.errors.push(`Recency decay: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // =========================================================
-    // 4. RECOMPUTE BEHAVIORAL SIGNALS (for stale profiles)
+    // 4. [COMPUTE] RECOMPUTE BEHAVIORAL SIGNALS
     // =========================================================
     try {
       const { data: recomputeResult, error: recomputeError } = await supabase.rpc(
@@ -388,24 +535,34 @@ Deno.serve(async (req) => {
         result.errors.push(`Signal recompute: ${recomputeError.message}`);
       } else {
         result.signalsRecomputed = recomputeResult || 0;
-        console.log(`[Background Processor] Recomputed signals for ${result.signalsRecomputed} users`);
+        console.log(`[COMPUTE] Recomputed signals for ${result.signalsRecomputed} users`);
       }
     } catch (e: unknown) {
       result.errors.push(`Signal recompute: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // =========================================================
-    // 5. POLL KLAVIYO FOR EMAIL ENGAGEMENT EVENTS (bidirectional sync)
+    // 5. [DECISION] IDENTITY BACKFILL - Retro-assign events when email arrives
+    // =========================================================
+    await performIdentityBackfill(supabase, result, identityBackfillMinutes);
+
+    // =========================================================
+    // 6. [SYNC] POLL KLAVIYO FOR EMAIL ENGAGEMENT EVENTS
     // =========================================================
     try {
       await pollKlaviyoEvents(supabase, result, klaviyoLookbackMinutes);
-      console.log(`[Background Processor] Imported ${result.klaviyoEventsImported} Klaviyo events, updated ${result.klaviyoUsersUpdated} users`);
+      console.log(`[SYNC] Imported ${result.klaviyoEventsImported} Klaviyo events, updated ${result.klaviyoUsersUpdated} users`);
     } catch (e: unknown) {
       result.errors.push(`Klaviyo polling: ${e instanceof Error ? e.message : String(e)}`);
     }
 
     // =========================================================
-    // 6. SCHEDULE PROFILE SYNCS (for recently updated profiles with email)
+    // 7. [DECISION] SCHEDULE DECISIONAL SYNCS
+    // =========================================================
+    await scheduleDecisionalSyncs(supabase, result, limit);
+
+    // =========================================================
+    // 8. [SYNC] SCHEDULE PROFILE SYNCS FOR RECENTLY UPDATED USERS
     // =========================================================
     try {
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -451,7 +608,7 @@ Deno.serve(async (req) => {
             }
           }
         }
-        console.log(`[Background Processor] Scheduled ${result.profileSyncsScheduled} profile syncs`);
+        console.log(`[SYNC] Scheduled ${result.profileSyncsScheduled} profile syncs`);
       }
     } catch (e: unknown) {
       result.errors.push(`Profile sync scheduling: ${e instanceof Error ? e.message : String(e)}`);
@@ -461,7 +618,10 @@ Deno.serve(async (req) => {
     // DONE
     // =========================================================
     const duration = Date.now() - startTime;
-    console.log(`[Background Processor] Completed in ${duration}ms`, result);
+    console.log(`[COMPUTE] Background processor completed in ${duration}ms`);
+    console.log(`[COMPUTE] Summary: recency=${result.recencyUpdated} abandonment=${result.abandonmentDetected} signals=${result.signalsRecomputed}`);
+    console.log(`[DECISION] Summary: backfill=${result.identityBackfillEvents} decisions=${result.decisionsTriggered}`);
+    console.log(`[SYNC] Summary: klaviyo_events=${result.klaviyoEventsImported} klaviyo_users=${result.klaviyoUsersUpdated} syncs=${result.profileSyncsScheduled}`);
 
     return new Response(
       JSON.stringify({
@@ -472,13 +632,13 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
-  } catch (error: unknown) {
-    console.error('[Background Processor] Fatal error:', error);
+  } catch (error) {
+    console.error('[COMPUTE] Error:', error);
     return new Response(
       JSON.stringify({ 
-        success: false, 
-        error: error instanceof Error ? error.message : String(error),
-        ...result 
+        error: 'Internal server error',
+        message: error instanceof Error ? error.message : String(error),
+        ...result
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
