@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.process-events]
 verify_jwt = false
+
+[functions.webhooks-shopify]
+verify_jwt = false
