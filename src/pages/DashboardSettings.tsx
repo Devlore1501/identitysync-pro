@@ -11,6 +11,7 @@ import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { useUpdateWorkspace, useUpdateWorkspaceSettings } from "@/hooks/useWorkspaceSettings";
 import { useBillingUsage } from "@/hooks/useBillingUsage";
 import { TrackingSnippet } from "@/components/dashboard/TrackingSnippet";
+import { PixelStatus } from "@/components/dashboard/PixelStatus";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -449,11 +450,42 @@ const DashboardSettings = () => {
 
           {/* Installation Tab */}
           <TabsContent value="installation" className="space-y-8">
+            {/* Pixel Status Section */}
+            <section>
+              <div className="metric-card">
+                <PixelStatus />
+              </div>
+            </section>
+
             <section>
               <h2 className="text-xl font-semibold mb-4">JavaScript Tracking Snippet</h2>
-              <p className="text-muted-foreground mb-6">
+              <p className="text-muted-foreground mb-4">
                 Add this snippet to your website to start tracking events. Place it in the {`<head>`} tag of your HTML.
               </p>
+              
+              {/* Events Tracked */}
+              <div className="mb-6 p-4 bg-muted/30 rounded-lg">
+                <h4 className="font-medium mb-3">📊 Eventi Tracciati Automaticamente:</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2 text-sm">
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Page View</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>View Collection</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>View Item</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Product Click</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Search</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Add to Cart</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Remove from Cart</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Cart Viewed</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Begin Checkout</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Purchase</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Scroll Depth</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Time on Page</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Exit Intent</div>
+                  <div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-primary"></span>Form Submitted</div>
+                </div>
+                <p className="text-xs text-muted-foreground mt-3">
+                  Supporta Klaviyo, Privy, e form HTML nativi per il tracking delle email
+                </p>
+              </div>
               
               {apiKeys.length === 0 ? (
                 <div className="metric-card text-center py-8">
