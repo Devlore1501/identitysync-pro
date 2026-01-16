@@ -70,19 +70,41 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Get account_id for the workspace
-    const { data: workspace } = await supabase
+    // Get workspace account_id first for role check
+    const { data: workspaceData } = await supabase
       .from('workspaces')
       .select('account_id')
       .eq('id', workspaceId)
       .single();
 
-    if (!workspace?.account_id) {
+    if (!workspaceData?.account_id) {
       return new Response(
         JSON.stringify({ error: 'Workspace not found' }),
         { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // SECURITY: Check for admin or owner role - audit log creation requires elevated permissions
+    const { data: hasAdminRole } = await supabase.rpc('has_role', {
+      _user_id: userId,
+      _account_id: workspaceData.account_id,
+      _role: 'admin'
+    });
+
+    const { data: hasOwnerRole } = await supabase.rpc('has_role', {
+      _user_id: userId,
+      _account_id: workspaceData.account_id,
+      _role: 'owner'
+    });
+
+    if (!hasAdminRole && !hasOwnerRole) {
+      return new Response(
+        JSON.stringify({ error: 'Audit log creation requires admin or owner role' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Use workspaceData.account_id (already fetched above for role check)
 
     // Get client IP from headers
     const ipAddress = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 
@@ -91,7 +113,7 @@ Deno.serve(async (req) => {
 
     // Insert audit log entries
     const logsToInsert = entries.map(entry => ({
-      account_id: workspace.account_id,
+      account_id: workspaceData.account_id,
       workspace_id: workspaceId,
       user_id: userId,
       action: entry.action,

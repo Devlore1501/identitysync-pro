@@ -19,20 +19,31 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   const [manualApiKey, setManualApiKey] = useState('');
   const [showManualInput, setShowManualInput] = useState(false);
   
-  // Try to get full API key from localStorage (stored when created)
-  const [storedApiKey, setStoredApiKey] = useState<string>('');
+  // SECURITY: Only retrieve key prefix from localStorage (full key not stored for security)
+  const [storedKeyPrefix, setStoredKeyPrefix] = useState<string>('');
   
   useEffect(() => {
     if (currentWorkspace?.id) {
-      const stored = localStorage.getItem(`sf_api_key_${currentWorkspace.id}`);
-      if (stored) setStoredApiKey(stored);
+      // Only retrieve the prefix, not the full key
+      const storedPrefix = localStorage.getItem(`sf_api_key_prefix_${currentWorkspace.id}`);
+      if (storedPrefix) setStoredKeyPrefix(storedPrefix);
+      
+      // SECURITY: Clean up any legacy full keys that may exist
+      const legacyKey = localStorage.getItem(`sf_api_key_${currentWorkspace.id}`);
+      if (legacyKey && !legacyKey.includes('...')) {
+        // Remove full key and only keep prefix
+        localStorage.removeItem(`sf_api_key_${currentWorkspace.id}`);
+        const prefix = legacyKey.substring(0, 12) + '...';
+        localStorage.setItem(`sf_api_key_prefix_${currentWorkspace.id}`, prefix);
+        setStoredKeyPrefix(prefix);
+      }
     }
   }, [currentWorkspace?.id]);
   
-  // Priority: manual input > prop > localStorage > show placeholder
-  const apiKey = manualApiKey || fullApiKey || storedApiKey || '';
+  // Priority: manual input > prop > show placeholder (no stored full keys for security)
+  const apiKey = manualApiKey || fullApiKey || '';
   const hasFullKey = !!apiKey && !apiKey.includes('...');
-  const displayKey = hasFullKey ? apiKey : (apiKeys[0]?.key_prefix || 'YOUR_API_KEY');
+  const displayKey = hasFullKey ? apiKey : (storedKeyPrefix || apiKeys[0]?.key_prefix || 'YOUR_API_KEY');
   
   const collectUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/collect`;
   const identifyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/identify`;
@@ -491,10 +502,11 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         if (data.success) {
           setVerificationResult('success');
           toast.success("API key is working correctly!");
-          // Save the working key
+          // SECURITY: Only store the prefix, not the full key
           if (currentWorkspace?.id) {
-            localStorage.setItem(`sf_api_key_${currentWorkspace.id}`, keyToVerify);
-            setStoredApiKey(keyToVerify);
+            const keyPrefix = keyToVerify.substring(0, 12) + '...';
+            localStorage.setItem(`sf_api_key_prefix_${currentWorkspace.id}`, keyPrefix);
+            setStoredKeyPrefix(keyPrefix);
           }
         } else {
           setVerificationResult('error');
@@ -547,10 +559,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
               value={manualApiKey}
               onChange={(e) => {
                 setManualApiKey(e.target.value);
-                if (currentWorkspace?.id && e.target.value.startsWith('sf_pk_')) {
-                  localStorage.setItem(`sf_api_key_${currentWorkspace.id}`, e.target.value);
-                  setStoredApiKey(e.target.value);
-                }
+                // SECURITY: Do not auto-store full keys, only store prefix after verification
               }}
               className="flex-1 font-mono text-sm"
             />
