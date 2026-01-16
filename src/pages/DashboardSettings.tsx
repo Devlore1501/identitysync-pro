@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle } from "lucide-react";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
-import { useUpdateWorkspace } from "@/hooks/useWorkspaceSettings";
+import { useUpdateWorkspace, useUpdateWorkspaceSettings } from "@/hooks/useWorkspaceSettings";
 import { useBillingUsage } from "@/hooks/useBillingUsage";
 import { TrackingSnippet } from "@/components/dashboard/TrackingSnippet";
 import { toast } from "sonner";
@@ -40,6 +40,7 @@ const DashboardSettings = () => {
   const { currentWorkspace } = useWorkspace();
   const { apiKeys, isLoading, createApiKey, revokeApiKey } = useApiKeys();
   const updateWorkspace = useUpdateWorkspace();
+  const updateSettings = useUpdateWorkspaceSettings();
   const { data: billingUsage } = useBillingUsage();
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState<string | null>(null);
@@ -53,6 +54,8 @@ const DashboardSettings = () => {
   const [workspaceDomain, setWorkspaceDomain] = useState("");
   const [workspacePlatform, setWorkspacePlatform] = useState("");
   const [workspaceTimezone, setWorkspaceTimezone] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
+  const [savingSecret, setSavingSecret] = useState(false);
 
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) {
@@ -288,6 +291,54 @@ const DashboardSettings = () => {
                         {currentWorkspace?.domain ? 'Configurato' : 'Mancante'}
                       </Badge>
                     </div>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-border space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Webhook Signing Secret</div>
+                        <div className="text-sm text-muted-foreground">
+                          {(currentWorkspace?.settings as Record<string, unknown>)?.shopify_webhook_secret 
+                            ? 'Secret configurato per la verifica HMAC'
+                            : 'Inserisci il secret dalla pagina webhooks di Shopify'}
+                        </div>
+                      </div>
+                      <Badge variant={(currentWorkspace?.settings as Record<string, unknown>)?.shopify_webhook_secret ? 'default' : 'secondary'}>
+                        {(currentWorkspace?.settings as Record<string, unknown>)?.shopify_webhook_secret ? 'Configurato' : 'Opzionale'}
+                      </Badge>
+                    </div>
+                    <div className="flex gap-2">
+                      <Input
+                        type="password"
+                        placeholder="whsec_..."
+                        value={webhookSecret}
+                        onChange={(e) => setWebhookSecret(e.target.value)}
+                        className="font-mono text-sm"
+                      />
+                      <Button 
+                        onClick={async () => {
+                          if (!webhookSecret.trim()) {
+                            toast.error('Inserisci il webhook secret');
+                            return;
+                          }
+                          setSavingSecret(true);
+                          try {
+                            await updateSettings.mutateAsync({ shopify_webhook_secret: webhookSecret });
+                            setWebhookSecret('');
+                            toast.success('Webhook secret salvato!');
+                          } catch {
+                            toast.error('Errore nel salvataggio');
+                          }
+                          setSavingSecret(false);
+                        }}
+                        disabled={savingSecret || !webhookSecret.trim()}
+                      >
+                        {savingSecret ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Salva'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Trovi il "Signing secret" in Shopify Admin → Settings → Notifications → Webhooks (in alto)
+                    </p>
                   </div>
                 </div>
               </section>
