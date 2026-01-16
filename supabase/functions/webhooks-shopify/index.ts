@@ -114,16 +114,32 @@ Deno.serve(async (req) => {
     const settings = (workspace?.settings as Record<string, unknown>) || {};
     const webhookSecret = settings.shopify_webhook_secret as string;
 
-    // Verify HMAC if secret is configured
-    if (webhookSecret && shopifyHmac) {
-      const isValid = await verifyShopifyHmac(rawBody, shopifyHmac, webhookSecret);
-      if (!isValid) {
-        console.error('Invalid Shopify HMAC signature');
-        return new Response(
-          JSON.stringify({ error: 'Invalid signature' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
+    // SECURITY: Webhook secret is REQUIRED - reject requests without it
+    if (!webhookSecret) {
+      console.error('Webhook secret not configured for workspace:', workspaceId);
+      return new Response(
+        JSON.stringify({ error: 'Webhook secret not configured. Please add it in workspace settings.' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // SECURITY: HMAC header is REQUIRED for webhook authentication
+    if (!shopifyHmac) {
+      console.error('Missing HMAC signature from Shopify webhook');
+      return new Response(
+        JSON.stringify({ error: 'Missing HMAC signature' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Verify HMAC signature
+    const isValid = await verifyShopifyHmac(rawBody, shopifyHmac, webhookSecret);
+    if (!isValid) {
+      console.error('Invalid Shopify HMAC signature for workspace:', workspaceId);
+      return new Response(
+        JSON.stringify({ error: 'Invalid signature' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Map Shopify topics to SignalForge events
