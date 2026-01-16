@@ -1,61 +1,12 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Search, Filter, Users, Mail, Phone, Cookie, Tag } from "lucide-react";
-
-const profiles = [
-  {
-    id: "uid_8a2b3c4d",
-    primaryEmail: "john.doe@gmail.com",
-    identities: 4,
-    events: 156,
-    lastSeen: "2 min ago",
-    intentScore: 85,
-    totalSpent: 1247.00,
-  },
-  {
-    id: "uid_5e6f7g8h",
-    primaryEmail: "sarah.miller@yahoo.com",
-    identities: 2,
-    events: 47,
-    lastSeen: "15 min ago",
-    intentScore: 62,
-    totalSpent: 389.00,
-  },
-  {
-    id: "uid_9i0j1k2l",
-    primaryEmail: "mike.johnson@outlook.com",
-    identities: 5,
-    events: 234,
-    lastSeen: "1 hour ago",
-    intentScore: 91,
-    totalSpent: 2156.00,
-  },
-  {
-    id: "uid_3m4n5o6p",
-    primaryEmail: "lisa.wang@gmail.com",
-    identities: 3,
-    events: 89,
-    lastSeen: "2 hours ago",
-    intentScore: 73,
-    totalSpent: 567.00,
-  },
-  {
-    id: "uid_7q8r9s0t",
-    primaryEmail: null,
-    identities: 1,
-    events: 12,
-    lastSeen: "3 hours ago",
-    intentScore: 28,
-    totalSpent: 0,
-  },
-];
+import { Search, Filter, Users, Mail, Phone, Cookie, Loader2 } from "lucide-react";
+import { useIdentities, useIdentitiesCount } from "@/hooks/useIdentities";
+import { formatDistanceToNow } from "date-fns";
 
 const Identities = () => {
-  const getIntentColor = (score: number) => {
-    if (score >= 80) return "text-success";
-    if (score >= 50) return "text-warning";
-    return "text-muted-foreground";
-  };
+  const { data: profiles, isLoading } = useIdentities(50);
+  const { data: profilesCount } = useIdentitiesCount();
 
   return (
     <DashboardLayout>
@@ -76,7 +27,7 @@ const Identities = () => {
                 <Users className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <div className="text-2xl font-bold">12,847</div>
+                <div className="text-2xl font-bold">{profilesCount?.toLocaleString() || 0}</div>
                 <div className="text-xs text-muted-foreground">Total Profiles</div>
               </div>
             </div>
@@ -87,29 +38,35 @@ const Identities = () => {
                 <Mail className="w-5 h-5 text-accent" />
               </div>
               <div>
-                <div className="text-2xl font-bold">9,234</div>
+                <div className="text-2xl font-bold">
+                  {profiles?.filter(p => p.primary_email).length || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">With Email</div>
               </div>
             </div>
           </div>
           <div className="metric-card py-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
-                <Phone className="w-5 h-5 text-success" />
+              <div className="w-10 h-10 rounded-lg bg-green-500/10 flex items-center justify-center">
+                <Phone className="w-5 h-5 text-green-500" />
               </div>
               <div>
-                <div className="text-2xl font-bold">4,567</div>
+                <div className="text-2xl font-bold">
+                  {profiles?.filter(p => p.phone).length || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">With Phone</div>
               </div>
             </div>
           </div>
           <div className="metric-card py-4">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
-                <Cookie className="w-5 h-5 text-warning" />
+              <div className="w-10 h-10 rounded-lg bg-yellow-500/10 flex items-center justify-center">
+                <Cookie className="w-5 h-5 text-yellow-500" />
               </div>
               <div>
-                <div className="text-2xl font-bold">3,613</div>
+                <div className="text-2xl font-bold">
+                  {profiles?.filter(p => !p.primary_email && !p.phone).length || 0}
+                </div>
                 <div className="text-xs text-muted-foreground">Anonymous Only</div>
               </div>
             </div>
@@ -133,66 +90,69 @@ const Identities = () => {
         </div>
 
         {/* Profiles list */}
-        <div className="space-y-4">
-          {profiles.map((profile, index) => (
-            <div 
-              key={profile.id}
-              className="metric-card hover:border-primary/30 transition-colors cursor-pointer animate-fade-in"
-              style={{ animationDelay: `${index * 0.05}s` }}
-            >
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                    <span className="text-lg font-semibold text-primary">
-                      {profile.primaryEmail ? profile.primaryEmail[0].toUpperCase() : "?"}
-                    </span>
-                  </div>
-                  <div>
-                    <div className="font-medium">
-                      {profile.primaryEmail || <span className="text-muted-foreground italic">Anonymous User</span>}
+        {isLoading ? (
+          <div className="metric-card flex items-center justify-center py-12">
+            <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : profiles && profiles.length > 0 ? (
+          <div className="space-y-4">
+            {profiles.map((profile, index) => (
+              <div 
+                key={profile.id}
+                className="metric-card hover:border-primary/30 transition-colors cursor-pointer animate-fade-in"
+                style={{ animationDelay: `${index * 0.05}s` }}
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
+                      <span className="text-lg font-semibold text-primary">
+                        {profile.primary_email ? profile.primary_email[0].toUpperCase() : "?"}
+                      </span>
                     </div>
-                    <div className="text-sm text-muted-foreground font-mono">{profile.id}</div>
+                    <div>
+                      <div className="font-medium">
+                        {profile.primary_email || <span className="text-muted-foreground italic">Anonymous User</span>}
+                      </div>
+                      <div className="text-sm text-muted-foreground font-mono">{profile.id.slice(0, 8)}...</div>
+                    </div>
                   </div>
-                </div>
 
-                <div className="flex flex-wrap items-center gap-6">
-                  <div className="text-center">
-                    <div className="text-lg font-semibold">{profile.identities}</div>
-                    <div className="text-xs text-muted-foreground">Identities</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-semibold">{profile.events}</div>
-                    <div className="text-xs text-muted-foreground">Events</div>
-                  </div>
-                  <div className="text-center">
-                    <div className={`text-lg font-semibold ${getIntentColor(profile.intentScore)}`}>
-                      {profile.intentScore}
+                  <div className="flex flex-wrap items-center gap-6">
+                    <div className="text-center">
+                      <div className="text-lg font-semibold">{profile.emails?.length || 0}</div>
+                      <div className="text-xs text-muted-foreground">Emails</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">Intent Score</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-lg font-semibold text-gradient">
-                      ${profile.totalSpent.toFixed(0)}
+                    <div className="text-center">
+                      <div className="text-lg font-semibold">{profile.anonymous_ids?.length || 0}</div>
+                      <div className="text-xs text-muted-foreground">Anonymous IDs</div>
                     </div>
-                    <div className="text-xs text-muted-foreground">Total Spent</div>
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {profile.lastSeen}
+                    <div className="text-center">
+                      <div className="text-lg font-semibold">{profile.customer_ids?.length || 0}</div>
+                      <div className="text-xs text-muted-foreground">Customer IDs</div>
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {formatDistanceToNow(new Date(profile.last_seen_at), { addSuffix: true })}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="metric-card text-center py-12 text-muted-foreground">
+            <p className="mb-2">No profiles resolved yet</p>
+            <p className="text-sm">Profiles will appear here once you start tracking and identifying users.</p>
+          </div>
+        )}
 
         {/* Pagination */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing 1-5 of 12,847 profiles
+            Showing {profiles?.length || 0} of {profilesCount?.toLocaleString() || 0} profiles
           </p>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" disabled>Previous</Button>
-            <Button variant="outline" size="sm">Next</Button>
+            <Button variant="outline" size="sm" disabled={!profiles || profiles.length < 50}>Next</Button>
           </div>
         </div>
       </div>
