@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.poll-klaviyo-events]
 verify_jwt = false
+
+[functions.seed-test-data]
+verify_jwt = false

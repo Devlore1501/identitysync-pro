@@ -61,7 +61,7 @@ export function useHighIntentUsers() {
             lastSeenAt: user.last_seen_at,
           };
         })
-        .filter((user) => user.intentScore > 30 && user.ordersCount === 0)
+        .filter((user) => user.intentScore > 5 && user.ordersCount === 0)
         .sort((a, b) => b.intentScore - a.intentScore)
         .slice(0, 10);
 

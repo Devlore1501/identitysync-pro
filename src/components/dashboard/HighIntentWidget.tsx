@@ -1,4 +1,4 @@
-import { Flame, ShoppingCart, CreditCard, Eye, Loader2, ArrowRight, CheckCircle } from "lucide-react";
+import { Flame, ShoppingCart, CreditCard, Eye, Loader2, ArrowRight, CheckCircle, Plus } from "lucide-react";
 import { useHighIntentUsers } from "@/hooks/useHighIntentUsers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { toast } from "sonner";
+import { useQueryClient } from "@tanstack/react-query";
 
 const stageIcons: Record<string, React.ElementType> = {
   checkout: CreditCard,
@@ -32,7 +33,9 @@ const stageLabels: Record<string, string> = {
 export const HighIntentWidget = () => {
   const { data: users, isLoading } = useHighIntentUsers();
   const { currentWorkspace } = useWorkspace();
+  const queryClient = useQueryClient();
   const [isExporting, setIsExporting] = useState(false);
+  const [isSeeding, setIsSeeding] = useState(false);
   const [exportResult, setExportResult] = useState<{ exported: number } | null>(null);
 
   const handleExportToKlaviyo = async () => {
@@ -67,6 +70,31 @@ export const HighIntentWidget = () => {
       toast.error("Errore nell'export verso Klaviyo");
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  const handleSeedTestData = async () => {
+    if (!currentWorkspace) {
+      toast.error("Nessun workspace selezionato");
+      return;
+    }
+
+    setIsSeeding(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('seed-test-data', {
+        body: { workspace_id: currentWorkspace.id }
+      });
+
+      if (error) throw error;
+
+      toast.success(`Creati ${data.usersCreated} utenti e ${data.eventsCreated} eventi di test`);
+      // Refresh the high intent users query
+      queryClient.invalidateQueries({ queryKey: ['high-intent-users'] });
+    } catch (err) {
+      console.error('Seed error:', err);
+      toast.error("Errore nella generazione dati di test");
+    } finally {
+      setIsSeeding(false);
     }
   };
 
@@ -183,7 +211,20 @@ export const HighIntentWidget = () => {
           <div className="text-center py-8 text-muted-foreground">
             <Flame className="w-8 h-8 mx-auto mb-2 opacity-30" />
             <p className="text-sm">No high intent users yet</p>
-            <p className="text-xs mt-1">Users with intent score &gt; 30 who haven't purchased will appear here</p>
+            <p className="text-xs mt-1 mb-4">Users with intent score &gt; 5 who haven't purchased will appear here</p>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleSeedTestData}
+              disabled={isSeeding}
+            >
+              {isSeeding ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Plus className="w-4 h-4 mr-2" />
+              )}
+              {isSeeding ? "Generazione..." : "Genera Dati Test"}
+            </Button>
           </div>
         )}
       </div>
