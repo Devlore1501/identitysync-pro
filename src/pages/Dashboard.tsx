@@ -14,7 +14,8 @@ import {
   RefreshCw,
   CheckCircle,
   AlertCircle,
-  Zap
+  Zap,
+  Loader2
 } from "lucide-react";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { useDestinations } from "@/hooks/useDestinations";
@@ -24,15 +25,38 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
 import { it } from "date-fns/locale";
+import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { toast } from "sonner";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const { data: health, isLoading, refetch } = useSystemHealth();
   const { destinations } = useDestinations();
   const { apiKeys } = useApiKeys();
+  const [isRecomputing, setIsRecomputing] = useState(false);
 
   const hasApiKey = apiKeys.length > 0;
   const klaviyoConnected = destinations.some(d => d.type === 'klaviyo' && d.enabled);
+
+  const handleRecomputeSignals = async () => {
+    setIsRecomputing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('background-processor', {
+        body: { limit: 100, force_recompute: true }
+      });
+
+      if (error) throw error;
+
+      toast.success(`Segnali ricalcolati per ${data?.signalsRecomputed || 0} utenti`);
+      refetch();
+    } catch (err) {
+      console.error('Recompute error:', err);
+      toast.error('Errore nel ricalcolo dei segnali');
+    } finally {
+      setIsRecomputing(false);
+    }
+  };
 
   return (
     <DashboardLayout>
@@ -57,6 +81,19 @@ const Dashboard = () => {
             <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
               <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Aggiorna
+            </Button>
+            <Button 
+              variant="secondary" 
+              size="sm" 
+              onClick={handleRecomputeSignals} 
+              disabled={isRecomputing}
+            >
+              {isRecomputing ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Brain className="w-4 h-4 mr-2" />
+              )}
+              Ricalcola Segnali
             </Button>
           </div>
         </div>
