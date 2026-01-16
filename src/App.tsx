@@ -13,6 +13,7 @@ import Events from "./pages/Events";
 import Identities from "./pages/Identities";
 import Destinations from "./pages/Destinations";
 import DashboardSettings from "./pages/DashboardSettings";
+import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -51,6 +52,11 @@ const App = () => (
               <Route path="/dashboard/settings" element={
                 <ProtectedRoute>
                   <DashboardSettings />
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/audit-logs" element={
+                <ProtectedRoute>
+                  <AuditLogs />
                 </ProtectedRoute>
               } />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

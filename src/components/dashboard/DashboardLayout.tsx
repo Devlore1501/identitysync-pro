@@ -13,7 +13,8 @@ import {
   LogOut,
   ChevronDown,
   Building2,
-  Plus
+  Plus,
+  FileText
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ const navItems: NavItem[] = [
   { label: "Events", icon: Activity, href: "/dashboard/events" },
   { label: "Identities", icon: Users, href: "/dashboard/identities" },
   { label: "Destinations", icon: Send, href: "/dashboard/destinations" },
+  { label: "Audit Logs", icon: FileText, href: "/dashboard/audit-logs" },
   { label: "Settings", icon: Settings, href: "/dashboard/settings" },
 ];
 
