@@ -117,7 +117,10 @@ export const DashboardLayout = ({ children }: DashboardLayoutProps) => {
                   </DropdownMenuItem>
                 ))}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem className="cursor-pointer">
+                <DropdownMenuItem 
+                  className="cursor-pointer"
+                  onClick={() => navigate("/dashboard/settings?tab=sites")}
+                >
                   <Plus className="w-4 h-4 mr-2" />
                   Add workspace
                 </DropdownMenuItem>
