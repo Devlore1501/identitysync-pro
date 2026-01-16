@@ -56,3 +56,6 @@ verify_jwt = false
 
 [functions.init-klaviyo-test]
 verify_jwt = false
+
+[functions.value-metrics]
+verify_jwt = false
