@@ -1,4 +1,4 @@
-import { Flame, ShoppingCart, CreditCard, Eye, Loader2, ArrowRight, CheckCircle, Plus } from "lucide-react";
+import { Flame, ShoppingCart, CreditCard, Eye, Loader2, ArrowRight, CheckCircle, Plus, RefreshCw } from "lucide-react";
 import { useHighIntentUsers } from "@/hooks/useHighIntentUsers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -229,9 +229,34 @@ export const HighIntentWidget = () => {
         )}
       </div>
 
-      {/* Action button */}
-      {highIntentUsers.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-border">
+      {/* Action buttons */}
+      <div className="mt-4 pt-4 border-t border-border space-y-2">
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            size="sm"
+            className="flex-1"
+            onClick={handleSeedTestData}
+            disabled={isSeeding}
+          >
+            {isSeeding ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Plus className="w-4 h-4 mr-2" />
+            )}
+            {isSeeding ? "Generazione..." : "Genera Test"}
+          </Button>
+          <Button 
+            variant="outline" 
+            size="sm"
+            onClick={() => queryClient.invalidateQueries({ queryKey: ['high-intent-users'] })}
+            disabled={isLoading}
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+          </Button>
+        </div>
+        
+        {highIntentUsers.length > 0 && (
           <Button 
             variant="ghost" 
             className="w-full justify-between text-sm" 
@@ -255,8 +280,8 @@ export const HighIntentWidget = () => {
             </span>
             {!isExporting && !exportResult && <ArrowRight className="w-4 h-4" />}
           </Button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };
