@@ -402,6 +402,88 @@ const DashboardSettings = () => {
               </section>
             )}
 
+            {/* Klaviyo Bi-Directional Sync */}
+            {klaviyoDestination && (
+              <section>
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5" />
+                  Klaviyo Sync Bidirezionale
+                </h2>
+                <div className="metric-card space-y-4">
+                  <div className="p-3 bg-primary/10 rounded-lg">
+                    <p className="text-sm font-medium text-primary mb-2">🔄 Ricevi eventi email da Klaviyo</p>
+                    <p className="text-xs text-muted-foreground">
+                      Configura un webhook in Klaviyo per inviare eventi (email opens, clicks, subscriptions) al tuo sistema.
+                      I profili verranno arricchiti con email engagement score e ri-sincronizzati automaticamente.
+                    </p>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-border">
+                    <div className="space-y-2">
+                      <div className="font-medium">Webhook URL</div>
+                      <div className="flex items-center gap-2">
+                        <code className="flex-1 text-xs text-muted-foreground font-mono break-all bg-muted p-2 rounded">
+                          {import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhooks-klaviyo?workspace_id={currentWorkspace?.id}
+                        </code>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(
+                              `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhooks-klaviyo?workspace_id=${currentWorkspace?.id}`
+                            );
+                            toast.success('Webhook URL copiato!');
+                          }}
+                        >
+                          <Copy className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-border">
+                    <div className="font-medium mb-2">Eventi Supportati</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { event: 'Opened Email', score: '+3 intent' },
+                        { event: 'Clicked Email', score: '+5 intent' },
+                        { event: 'Subscribed to List', score: '+2 intent' },
+                        { event: 'Clicked SMS', score: '+4 intent' },
+                      ].map((item) => (
+                        <div key={item.event} className="flex items-center justify-between p-2 rounded bg-muted/50 text-sm">
+                          <span>{item.event}</span>
+                          <Badge variant="secondary" className="text-xs">{item.score}</Badge>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-border">
+                    <div className="font-medium mb-2">Proprietà Sincronizzate</div>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <p>• <code className="text-xs">sf_email_opens_30d</code> - Aperture email ultimi 30gg</p>
+                      <p>• <code className="text-xs">sf_email_clicks_30d</code> - Click email ultimi 30gg</p>
+                      <p>• <code className="text-xs">sf_email_engagement_score</code> - Score engagement email (0-100)</p>
+                      <p>• <code className="text-xs">sf_is_subscribed</code> - Stato iscrizione</p>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-border">
+                    <div className="p-3 bg-muted rounded-lg">
+                      <p className="text-sm font-medium mb-2">📋 Come configurare in Klaviyo:</p>
+                      <ol className="text-xs text-muted-foreground space-y-1 list-decimal list-inside">
+                        <li>Vai su Klaviyo → Settings → Webhooks</li>
+                        <li>Clicca "Create Webhook"</li>
+                        <li>Incolla l'URL sopra</li>
+                        <li>Seleziona gli eventi: Opened Email, Clicked Email, Subscribed to List</li>
+                        <li>Salva e attiva il webhook</li>
+                      </ol>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Data Retention */}
             <section>
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
