@@ -27,6 +27,7 @@ import { formatDistanceToNow } from "date-fns";
 
 const availableDestinations = [
   { id: "klaviyo", name: "Klaviyo", type: "ESP", logo: "K" },
+  { id: "meta", name: "Meta (Facebook)", type: "Ads", logo: "M" },
   { id: "ga4", name: "Google Analytics 4", type: "Analytics", logo: "G" },
   { id: "webhook", name: "Custom Webhook", type: "Integration", logo: "W" },
 ];
@@ -35,9 +36,11 @@ const Destinations = () => {
   const { destinations, isLoading, createDestination, updateDestination, deleteDestination } = useDestinations();
   const { data: syncStats } = useSyncStats();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedType, setSelectedType] = useState<'klaviyo' | 'webhook' | 'ga4'>('klaviyo');
+  const [selectedType, setSelectedType] = useState<'klaviyo' | 'webhook' | 'ga4' | 'meta'>('klaviyo');
   const [name, setName] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [pixelId, setPixelId] = useState("");
+  const [testEventCode, setTestEventCode] = useState("");
   const [isCreating, setIsCreating] = useState(false);
 
   const handleCreate = async () => {
@@ -49,21 +52,43 @@ const Destinations = () => {
       toast.error("Please enter your Klaviyo API key");
       return;
     }
+    if (selectedType === 'meta') {
+      if (!pixelId.trim()) {
+        toast.error("Please enter your Meta Pixel ID");
+        return;
+      }
+      if (!apiKey.trim()) {
+        toast.error("Please enter your Conversions API Access Token");
+        return;
+      }
+    }
 
     setIsCreating(true);
     try {
+      let config = {};
+      if (selectedType === 'klaviyo') {
+        config = { api_key: apiKey };
+      } else if (selectedType === 'meta') {
+        config = { 
+          pixel_id: pixelId, 
+          access_token: apiKey,
+          ...(testEventCode && { test_event_code: testEventCode })
+        };
+      }
+
       await createDestination.mutateAsync({
         name,
-        type: selectedType,
-        config: selectedType === 'klaviyo' ? { api_key: apiKey } : {},
+        type: selectedType as 'klaviyo' | 'webhook' | 'ga4',
+        config,
         enabled: true,
       });
-      toast.success("Destination connected!");
       setDialogOpen(false);
       setName("");
       setApiKey("");
+      setPixelId("");
+      setTestEventCode("");
     } catch {
-      toast.error("Failed to create destination");
+      // Error handled by hook
     }
     setIsCreating(false);
   };
@@ -121,6 +146,7 @@ const Destinations = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="klaviyo">Klaviyo (ESP)</SelectItem>
+                      <SelectItem value="meta">Meta / Facebook (Ads)</SelectItem>
                       <SelectItem value="ga4">Google Analytics 4</SelectItem>
                       <SelectItem value="webhook">Custom Webhook</SelectItem>
                     </SelectContent>
@@ -129,7 +155,7 @@ const Destinations = () => {
                 <div className="space-y-2">
                   <Label>Name</Label>
                   <Input
-                    placeholder="e.g., Production Klaviyo"
+                    placeholder={selectedType === 'meta' ? "e.g., Production Meta CAPI" : "e.g., Production Klaviyo"}
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                   />
@@ -147,6 +173,44 @@ const Destinations = () => {
                       Find this in Klaviyo → Account → Settings → API Keys
                     </p>
                   </div>
+                )}
+                {selectedType === 'meta' && (
+                  <>
+                    <div className="space-y-2">
+                      <Label>Meta Pixel ID</Label>
+                      <Input
+                        placeholder="123456789012345"
+                        value={pixelId}
+                        onChange={(e) => setPixelId(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Find this in Meta Events Manager → Data Sources → Your Pixel
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Conversions API Access Token</Label>
+                      <Input
+                        type="password"
+                        placeholder="EAAGm0PX4ZCps..."
+                        value={apiKey}
+                        onChange={(e) => setApiKey(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Generate in Events Manager → Settings → Conversions API → Generate Access Token
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Test Event Code (optional)</Label>
+                      <Input
+                        placeholder="TEST12345"
+                        value={testEventCode}
+                        onChange={(e) => setTestEventCode(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Use for testing - events will appear in Test Events tab
+                      </p>
+                    </div>
+                  </>
                 )}
               </div>
               <DialogFooter>
@@ -244,7 +308,7 @@ const Destinations = () => {
             <h3 className="text-lg font-semibold mb-4">Available Destinations</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {availableDestinations
-                .filter(d => !configuredTypes.includes(d.id as 'klaviyo' | 'webhook' | 'ga4'))
+                .filter(d => !configuredTypes.includes(d.id as 'klaviyo' | 'webhook' | 'ga4' | 'meta'))
                 .map((destination, index) => (
                 <div 
                   key={destination.id}

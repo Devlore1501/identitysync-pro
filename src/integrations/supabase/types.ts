@@ -699,7 +699,7 @@ export type Database = {
     }
     Enums: {
       app_role: "owner" | "admin" | "member"
-      destination_type: "klaviyo" | "webhook" | "ga4"
+      destination_type: "klaviyo" | "webhook" | "ga4" | "meta"
       event_status: "pending" | "processed" | "failed" | "synced"
       identity_type:
         | "email"
@@ -836,7 +836,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["owner", "admin", "member"],
-      destination_type: ["klaviyo", "webhook", "ga4"],
+      destination_type: ["klaviyo", "webhook", "ga4", "meta"],
       event_status: ["pending", "processed", "failed", "synced"],
       identity_type: [
         "email",
