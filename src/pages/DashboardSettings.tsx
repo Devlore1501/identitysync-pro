@@ -5,7 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle } from "lucide-react";
+import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle, Sparkles } from "lucide-react";
+import { useDestinations } from "@/hooks/useDestinations";
+import { supabase } from "@/integrations/supabase/client";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { useUpdateWorkspace, useUpdateWorkspaceSettings } from "@/hooks/useWorkspaceSettings";
@@ -40,6 +42,7 @@ const PLAN_LIMITS = {
 const DashboardSettings = () => {
   const { currentWorkspace } = useWorkspace();
   const { apiKeys, isLoading, createApiKey, revokeApiKey } = useApiKeys();
+  const { destinations } = useDestinations();
   const updateWorkspace = useUpdateWorkspace();
   const updateSettings = useUpdateWorkspaceSettings();
   const { data: billingUsage } = useBillingUsage();
@@ -57,6 +60,53 @@ const DashboardSettings = () => {
   const [workspaceTimezone, setWorkspaceTimezone] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
   const [savingSecret, setSavingSecret] = useState(false);
+  
+  // Cleanup state
+  const [cleanupLoading, setCleanupLoading] = useState(false);
+  const [cleanupResult, setCleanupResult] = useState<{
+    found: number;
+    deleted: number;
+    dryRun: boolean;
+  } | null>(null);
+
+  const klaviyoDestination = destinations?.find(d => d.type === 'klaviyo' && d.enabled);
+
+  const handleCleanupKlaviyo = async (dryRun: boolean) => {
+    if (!klaviyoDestination) {
+      toast.error('Nessuna destinazione Klaviyo configurata');
+      return;
+    }
+
+    setCleanupLoading(true);
+    setCleanupResult(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('cleanup-klaviyo', {
+        body: {
+          destinationId: klaviyoDestination.id,
+          dryRun
+        }
+      });
+
+      if (error) throw error;
+
+      setCleanupResult({
+        found: data.found,
+        deleted: data.deleted,
+        dryRun: data.dryRun
+      });
+
+      if (dryRun) {
+        toast.info(`Trovati ${data.found} profili fantasma da eliminare`);
+      } else {
+        toast.success(`Eliminati ${data.deleted} profili fantasma da Klaviyo`);
+      }
+    } catch (err) {
+      toast.error(`Errore cleanup: ${err instanceof Error ? err.message : 'Errore sconosciuto'}`);
+    } finally {
+      setCleanupLoading(false);
+    }
+  };
 
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) {
@@ -446,6 +496,61 @@ const DashboardSettings = () => {
                 </div>
               </div>
             </section>
+
+            {/* Klaviyo Cleanup */}
+            {klaviyoDestination && (
+              <section>
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5" />
+                  Pulizia Klaviyo
+                </h2>
+                <div className="metric-card space-y-4">
+                  <div>
+                    <div className="font-medium">Rimuovi profili fantasma</div>
+                    <div className="text-sm text-muted-foreground">
+                      Elimina da Klaviyo i profili sincronizzati senza email (creati solo con external_id)
+                    </div>
+                  </div>
+
+                  {cleanupResult && (
+                    <div className={`p-3 rounded-lg ${cleanupResult.dryRun ? 'bg-muted/50' : 'bg-primary/10'}`}>
+                      {cleanupResult.dryRun ? (
+                        <p className="text-sm">
+                          <strong>Anteprima:</strong> {cleanupResult.found} profili fantasma trovati che verranno eliminati
+                        </p>
+                      ) : (
+                        <p className="text-sm text-primary">
+                          <strong>✓ Completato:</strong> {cleanupResult.deleted} profili eliminati da Klaviyo
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => handleCleanupKlaviyo(true)}
+                      disabled={cleanupLoading}
+                    >
+                      {cleanupLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                      Anteprima
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      onClick={() => handleCleanupKlaviyo(false)}
+                      disabled={cleanupLoading || !cleanupResult?.dryRun}
+                    >
+                      {cleanupLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                      Elimina profili
+                    </Button>
+                  </div>
+
+                  <p className="text-xs text-muted-foreground">
+                    Prima clicca "Anteprima" per vedere quanti profili verranno rimossi, poi conferma con "Elimina profili"
+                  </p>
+                </div>
+              </section>
+            )}
           </TabsContent>
 
           {/* Installation Tab */}
