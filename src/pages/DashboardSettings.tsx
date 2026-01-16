@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle, Sparkles } from "lucide-react";
+import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle, Sparkles, FlaskConical } from "lucide-react";
 import { useDestinations } from "@/hooks/useDestinations";
 import { supabase } from "@/integrations/supabase/client";
 import { useApiKeys } from "@/hooks/useApiKeys";
@@ -75,6 +75,13 @@ const DashboardSettings = () => {
     found: number;
     deleted: number;
     dryRun: boolean;
+  } | null>(null);
+  
+  // Test data state
+  const [seedingTestData, setSeedingTestData] = useState(false);
+  const [testDataResult, setTestDataResult] = useState<{
+    usersCreated: number;
+    eventsCreated: number;
   } | null>(null);
 
   const klaviyoDestination = destinations?.find(d => d.type === 'klaviyo' && d.enabled);
@@ -541,6 +548,65 @@ const DashboardSettings = () => {
                     <div className="text-lg font-semibold">{(billingUsage?.syncs_count || 0).toLocaleString()}</div>
                   </div>
                 </div>
+              </div>
+            </section>
+
+            {/* Test Data Section */}
+            <section>
+              <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                <FlaskConical className="w-5 h-5" />
+                Dati di Test
+              </h2>
+              <div className="metric-card space-y-4">
+                <div>
+                  <div className="font-medium">Genera utenti high-intent di test</div>
+                  <div className="text-sm text-muted-foreground">
+                    Crea utenti finti con vari intent score per testare il widget High Intent Users
+                  </div>
+                </div>
+
+                {testDataResult && (
+                  <div className="p-3 rounded-lg bg-primary/10">
+                    <p className="text-sm text-primary">
+                      <strong>✓ Creati:</strong> {testDataResult.usersCreated} utenti e {testDataResult.eventsCreated} eventi
+                    </p>
+                  </div>
+                )}
+
+                <Button
+                  onClick={async () => {
+                    if (!currentWorkspace?.id) {
+                      toast.error('Nessun workspace selezionato');
+                      return;
+                    }
+                    setSeedingTestData(true);
+                    setTestDataResult(null);
+                    try {
+                      const { data, error } = await supabase.functions.invoke('seed-test-data', {
+                        body: { workspace_id: currentWorkspace.id }
+                      });
+                      if (error) throw error;
+                      setTestDataResult({
+                        usersCreated: data.usersCreated,
+                        eventsCreated: data.eventsCreated
+                      });
+                      toast.success(`Creati ${data.usersCreated} utenti e ${data.eventsCreated} eventi di test`);
+                    } catch (err) {
+                      console.error('Seed error:', err);
+                      toast.error('Errore nella generazione dati di test');
+                    } finally {
+                      setSeedingTestData(false);
+                    }
+                  }}
+                  disabled={seedingTestData}
+                >
+                  {seedingTestData ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Plus className="w-4 h-4 mr-2" />}
+                  {seedingTestData ? 'Generazione in corso...' : 'Genera Dati Test'}
+                </Button>
+
+                <p className="text-xs text-muted-foreground">
+                  Verranno creati 5 utenti con intent score variabili (10-85) e relativi eventi
+                </p>
               </div>
             </section>
 
