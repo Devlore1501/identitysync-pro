@@ -1,14 +1,67 @@
+import { useState } from "react";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, RefreshCw, Trash2, Plus, Shield, Database, Bell, CreditCard } from "lucide-react";
-
-const apiKeys = [
-  { id: "key_1", name: "Production", key: "sf_live_***...abc", scopes: ["collect", "admin"], created: "Jan 10, 2024" },
-  { id: "key_2", name: "Development", key: "sf_test_***...xyz", scopes: ["collect"], created: "Jan 8, 2024" },
-];
+import { Input } from "@/components/ui/input";
+import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check } from "lucide-react";
+import { useApiKeys } from "@/hooks/useApiKeys";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 const DashboardSettings = () => {
+  const { currentWorkspace } = useWorkspace();
+  const { apiKeys, isLoading, createApiKey, revokeApiKey } = useApiKeys();
+  const [newKeyName, setNewKeyName] = useState("");
+  const [createdKey, setCreatedKey] = useState<string | null>(null);
+  const [isCreating, setIsCreating] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const handleCreateKey = async () => {
+    if (!newKeyName.trim()) {
+      toast.error("Please enter a key name");
+      return;
+    }
+    setIsCreating(true);
+    try {
+      const result = await createApiKey.mutateAsync({
+        name: newKeyName,
+        scopes: ["collect", "identify"],
+      });
+      setCreatedKey(result.raw_key);
+      setNewKeyName("");
+      toast.success("API key created!");
+    } catch (error) {
+      toast.error("Failed to create API key");
+    }
+    setIsCreating(false);
+  };
+
+  const handleCopyKey = async (key: string) => {
+    await navigator.clipboard.writeText(key);
+    setCopied(true);
+    toast.success("Copied to clipboard!");
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleRevoke = async (keyId: string) => {
+    try {
+      await revokeApiKey.mutateAsync(keyId);
+      toast.success("API key revoked");
+    } catch {
+      toast.error("Failed to revoke key");
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="max-w-4xl space-y-8">
@@ -19,7 +72,7 @@ const DashboardSettings = () => {
             <div className="flex items-center justify-between">
               <div>
                 <label className="text-sm text-muted-foreground">Workspace Name</label>
-                <div className="font-medium">My Store</div>
+                <div className="font-medium">{currentWorkspace?.name || "Loading..."}</div>
               </div>
               <Button variant="outline" size="sm">Edit</Button>
             </div>
@@ -27,16 +80,16 @@ const DashboardSettings = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <label className="text-sm text-muted-foreground">Shop Domain</label>
-                  <div className="font-medium">mystore.myshopify.com</div>
+                  <div className="font-medium">{currentWorkspace?.domain || "Not configured"}</div>
                 </div>
-                <Badge variant="outline">Shopify</Badge>
+                <Badge variant="outline">{currentWorkspace?.platform || "Custom"}</Badge>
               </div>
             </div>
             <div className="pt-4 border-t border-border">
               <div className="flex items-center justify-between">
                 <div>
                   <label className="text-sm text-muted-foreground">Timezone</label>
-                  <div className="font-medium">Europe/Rome (UTC+1)</div>
+                  <div className="font-medium">{currentWorkspace?.timezone || "UTC"}</div>
                 </div>
                 <Button variant="outline" size="sm">Change</Button>
               </div>
@@ -48,45 +101,85 @@ const DashboardSettings = () => {
         <section>
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold">API Keys</h2>
-            <Button variant="default" size="sm">
-              <Plus className="w-4 h-4 mr-2" />
-              Create Key
-            </Button>
+            <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) setCreatedKey(null); }}>
+              <DialogTrigger asChild>
+                <Button variant="default" size="sm">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create Key
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{createdKey ? "API Key Created" : "Create API Key"}</DialogTitle>
+                  <DialogDescription>
+                    {createdKey 
+                      ? "Copy this key now. You won't be able to see it again!"
+                      : "Give your API key a name to identify it later."
+                    }
+                  </DialogDescription>
+                </DialogHeader>
+                {createdKey ? (
+                  <div className="space-y-4">
+                    <div className="p-3 bg-muted rounded-lg font-mono text-sm break-all">
+                      {createdKey}
+                    </div>
+                    <Button onClick={() => handleCopyKey(createdKey)} className="w-full">
+                      {copied ? <Check className="w-4 h-4 mr-2" /> : <Copy className="w-4 h-4 mr-2" />}
+                      {copied ? "Copied!" : "Copy to Clipboard"}
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      placeholder="e.g., Production, Development"
+                      value={newKeyName}
+                      onChange={(e) => setNewKeyName(e.target.value)}
+                    />
+                    <DialogFooter>
+                      <Button onClick={handleCreateKey} disabled={isCreating}>
+                        {isCreating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                        Create Key
+                      </Button>
+                    </DialogFooter>
+                  </>
+                )}
+              </DialogContent>
+            </Dialog>
           </div>
           <div className="metric-card p-0">
-            <div className="divide-y divide-border">
-              {apiKeys.map(apiKey => (
-                <div key={apiKey.id} className="p-4 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
-                      <Shield className="w-5 h-5 text-muted-foreground" />
+            {isLoading ? (
+              <div className="p-8 text-center text-muted-foreground">Loading...</div>
+            ) : apiKeys.length === 0 ? (
+              <div className="p-8 text-center text-muted-foreground">
+                No API keys yet. Create one to start collecting events.
+              </div>
+            ) : (
+              <div className="divide-y divide-border">
+                {apiKeys.map(apiKey => (
+                  <div key={apiKey.id} className="p-4 flex items-center justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+                        <Shield className="w-5 h-5 text-muted-foreground" />
+                      </div>
+                      <div>
+                        <div className="font-medium">{apiKey.name}</div>
+                        <div className="text-sm text-muted-foreground font-mono">{apiKey.key_prefix}</div>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-medium">{apiKey.name}</div>
-                      <div className="text-sm text-muted-foreground font-mono">{apiKey.key}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="flex gap-1">
-                      {apiKey.scopes.map(scope => (
-                        <Badge key={scope} variant="secondary" className="text-xs">{scope}</Badge>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon">
-                        <Copy className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon">
-                        <RefreshCw className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="text-destructive">
+                    <div className="flex items-center gap-4">
+                      <div className="flex gap-1">
+                        {apiKey.scopes.map(scope => (
+                          <Badge key={scope} variant="secondary" className="text-xs">{scope}</Badge>
+                        ))}
+                      </div>
+                      <Button variant="ghost" size="icon" className="text-destructive" onClick={() => handleRevoke(apiKey.id)}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </section>
 
@@ -119,13 +212,6 @@ const DashboardSettings = () => {
                 <option>24 months</option>
               </select>
             </div>
-            <div className="pt-4 border-t border-border flex items-center justify-between">
-              <div>
-                <div className="font-medium">Identity Profiles</div>
-                <div className="text-sm text-muted-foreground">Unified customer profiles</div>
-              </div>
-              <Badge variant="outline">Permanent</Badge>
-            </div>
           </div>
         </section>
 
@@ -143,20 +229,6 @@ const DashboardSettings = () => {
               </div>
               <input type="checkbox" defaultChecked className="w-5 h-5 rounded accent-primary" />
             </div>
-            <div className="pt-4 border-t border-border flex items-center justify-between">
-              <div>
-                <div className="font-medium">High Drop Rate</div>
-                <div className="text-sm text-muted-foreground">Alert when event drop rate exceeds 5%</div>
-              </div>
-              <input type="checkbox" defaultChecked className="w-5 h-5 rounded accent-primary" />
-            </div>
-            <div className="pt-4 border-t border-border flex items-center justify-between">
-              <div>
-                <div className="font-medium">Usage Limits</div>
-                <div className="text-sm text-muted-foreground">Alert when approaching plan limits</div>
-              </div>
-              <input type="checkbox" defaultChecked className="w-5 h-5 rounded accent-primary" />
-            </div>
           </div>
         </section>
 
@@ -169,44 +241,10 @@ const DashboardSettings = () => {
           <div className="metric-card">
             <div className="flex items-center justify-between mb-6">
               <div>
-                <div className="text-2xl font-bold">Growth Plan</div>
-                <div className="text-muted-foreground">€249/month • 1M events included</div>
+                <div className="text-2xl font-bold">Free Plan</div>
+                <div className="text-muted-foreground">10K events/month included</div>
               </div>
               <Button variant="outline">Upgrade</Button>
-            </div>
-            <div className="p-4 rounded-lg bg-muted/30">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-sm text-muted-foreground">Events this month</span>
-                <span className="font-medium">847,293 / 1,000,000</span>
-              </div>
-              <div className="h-2 rounded-full bg-muted overflow-hidden">
-                <div 
-                  className="h-full rounded-full bg-gradient-to-r from-primary to-accent"
-                  style={{ width: '84.7%' }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                Resets on Feb 1, 2024 • Overage: €5 per 100K events
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* Danger Zone */}
-        <section>
-          <h2 className="text-xl font-semibold mb-4 text-destructive">Danger Zone</h2>
-          <div className="metric-card border-destructive/30">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="font-medium">Delete Workspace</div>
-                <div className="text-sm text-muted-foreground">
-                  Permanently delete this workspace and all its data
-                </div>
-              </div>
-              <Button variant="destructive" size="sm">
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete
-              </Button>
             </div>
           </div>
         </section>
