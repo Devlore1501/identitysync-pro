@@ -4,6 +4,7 @@ import { EventsChart } from "@/components/dashboard/EventsChart";
 import { RecentEvents } from "@/components/dashboard/RecentEvents";
 import { IdentityGraph } from "@/components/dashboard/IdentityGraph";
 import { FunnelWidget } from "@/components/dashboard/FunnelWidget";
+import { BehavioralInsights } from "@/components/dashboard/BehavioralInsights";
 import { Activity, Users, Send, Clock, CheckCircle, AlertCircle, Code } from "lucide-react";
 import { useEventsCount } from "@/hooks/useEvents";
 import { useIdentitiesCount } from "@/hooks/useIdentities";
@@ -66,6 +67,9 @@ const Dashboard = () => {
           <FunnelWidget />
           <IdentityGraph />
         </div>
+
+        {/* Behavioral Intelligence */}
+        <BehavioralInsights />
 
         {/* Setup checklist */}
         <div className="metric-card">
