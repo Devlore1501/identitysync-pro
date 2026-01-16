@@ -40,7 +40,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   // Use the key for snippet display and verification
   const snippetKey = hasFullKey ? apiKey : displayKey;
 
-  const snippet = `<!-- SignalForge Tracking Snippet -->
+  const snippet = `<!-- SignalForge Tracking Snippet - Full Funnel Tracking -->
 <script>
 (function(w,d,s,l,i){
   w.SignalForge=w.SignalForge||[];
@@ -102,41 +102,112 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   // Auto-track page views
   w.sfTrack('Page View',{path:location.pathname});
   
+  // === SCROLL DEPTH TRACKING ===
+  var scrollMilestones={25:false,50:false,75:false,100:false};
+  var trackScroll=function(){
+    var h=document.documentElement;
+    var pct=Math.round((h.scrollTop/(h.scrollHeight-h.clientHeight))*100)||0;
+    [25,50,75,100].forEach(function(m){
+      if(pct>=m&&!scrollMilestones[m]){
+        scrollMilestones[m]=true;
+        w.sfTrack('Scroll Depth',{percent:m,path:location.pathname});
+      }
+    });
+  };
+  var scrollTimer;
+  window.addEventListener('scroll',function(){
+    clearTimeout(scrollTimer);
+    scrollTimer=setTimeout(trackScroll,200);
+  });
+  
+  // === TIME ON PAGE ===
+  var timeOnPage=0;
+  var timeInterval=setInterval(function(){
+    timeOnPage+=1;
+    if(timeOnPage===30||timeOnPage===60||timeOnPage===120){
+      w.sfTrack('Time on Page',{seconds:timeOnPage,path:location.pathname});
+    }
+    if(timeOnPage>=120)clearInterval(timeInterval);
+  },1000);
+  
+  // === EXIT INTENT ===
+  var exitTracked=false;
+  document.addEventListener('mouseout',function(e){
+    if(!exitTracked&&e.clientY<10){
+      exitTracked=true;
+      w.sfTrack('Exit Intent',{path:location.pathname});
+    }
+  });
+  
   // === SHOPIFY AUTO-TRACKING ===
-  // Detects Shopify and hooks into e-commerce events
   if(w.Shopify){
+    var currency=w.Shopify.currency?w.Shopify.currency.active:'USD';
+    
+    // Collection view
+    if(location.pathname.includes('/collections/')&&!location.pathname.includes('/products/')){
+      var collHandle=location.pathname.split('/collections/')[1]?.split('/')[0]||'';
+      w.sfTrack('View Collection',{collection_handle:collHandle,url:location.href});
+    }
+    
     // Product view (on product pages)
-    if(w.ShopifyAnalytics && w.ShopifyAnalytics.meta && w.ShopifyAnalytics.meta.product){
+    if(w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.product){
       var p=w.ShopifyAnalytics.meta.product;
       w.sfTrack('View Item',{
         product_id:p.id,
         product_name:p.type,
         variant_id:p.variants?p.variants[0].id:null,
         price:p.variants?p.variants[0].price/100:0,
-        currency:w.Shopify.currency.active||'USD'
+        currency:currency
       });
     }
     
-    // Add to Cart hook
+    // Search tracking
+    if(location.pathname.includes('/search')){
+      var q=new URLSearchParams(location.search).get('q')||'';
+      w.sfTrack('Search',{query:q,url:location.href});
+    }
+    
+    // Product click tracking (on collection pages)
+    document.querySelectorAll('a[href*="/products/"]').forEach(function(link){
+      link.addEventListener('click',function(){
+        var href=link.getAttribute('href')||'';
+        var handle=href.split('/products/')[1]?.split('?')[0]||'';
+        w.sfTrack('Product Click',{product_handle:handle,from_url:location.href});
+      });
+    });
+    
+    // Hook fetch for cart operations
     var origFetch=w.fetch;
     w.fetch=function(url,opts){
-      if(url&&url.includes('/cart/add')){
-        var body=opts&&opts.body?JSON.parse(opts.body):{};
-        w.sfTrack('Add to Cart',{
-          product_id:body.id,
-          quantity:body.quantity||1,
-          currency:w.Shopify.currency.active||'USD'
-        });
+      if(url){
+        // Add to Cart
+        if(url.includes('/cart/add')){
+          try{
+            var body=opts&&opts.body?JSON.parse(opts.body):{};
+            w.sfTrack('Add to Cart',{product_id:body.id,quantity:body.quantity||1,currency:currency});
+          }catch(e){}
+        }
+        // Remove from Cart
+        if(url.includes('/cart/change')){
+          try{
+            var body=opts&&opts.body?JSON.parse(opts.body):{};
+            if(body.quantity===0){
+              w.sfTrack('Remove from Cart',{line:body.line,currency:currency});
+            }
+          }catch(e){}
+        }
       }
       return origFetch.apply(this,arguments);
     };
     
-    // Checkout start (on /checkout pages)
+    // Cart viewed (mini cart / drawer)
+    document.querySelectorAll('[href="/cart"],[data-cart-toggle],[class*="cart-icon"]').forEach(function(el){
+      el.addEventListener('click',function(){w.sfTrack('Cart Viewed',{currency:currency});});
+    });
+    
+    // Checkout start
     if(location.pathname.includes('/checkout')){
-      w.sfTrack('Begin Checkout',{
-        url:location.href,
-        currency:w.Shopify.currency.active||'USD'
-      });
+      w.sfTrack('Begin Checkout',{url:location.href,currency:currency});
     }
     
     // Thank you page (purchase complete)
@@ -156,6 +227,37 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
       }
     }
   }
+  
+  // === POPUP/FORM TRACKING ===
+  // Klaviyo
+  if(w._klOnsite){
+    try{
+      w._klOnsite.push(['openForm',function(){w.sfTrack('Form Viewed',{form_type:'popup',provider:'klaviyo'})}]);
+      w._klOnsite.push(['submitForm',function(e){
+        w.sfTrack('Form Submitted',{form_type:'popup',provider:'klaviyo',email:e.email||''});
+        if(e.email)w.sfIdentify(e.email,{source:'klaviyo_popup'});
+      }]);
+    }catch(e){}
+  }
+  // Privy
+  if(w.Privy){
+    try{
+      w.Privy('onFormSubmit',function(e){
+        w.sfTrack('Form Submitted',{form_type:'popup',provider:'privy',email:e.email||''});
+        if(e.email)w.sfIdentify(e.email,{source:'privy_popup'});
+      });
+    }catch(e){}
+  }
+  // Generic form tracking
+  document.querySelectorAll('form').forEach(function(form){
+    form.addEventListener('submit',function(){
+      var email=form.querySelector('input[type="email"]');
+      if(email&&email.value){
+        w.sfTrack('Form Submitted',{form_type:'inline',email:email.value});
+        w.sfIdentify(email.value,{source:'form_submit'});
+      }
+    });
+  });
   
 })(window,document,'script','sf','${snippetKey}');
 </script>`;

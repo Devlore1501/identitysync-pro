@@ -3,6 +3,7 @@ import { MetricCard } from "@/components/dashboard/MetricCard";
 import { EventsChart } from "@/components/dashboard/EventsChart";
 import { RecentEvents } from "@/components/dashboard/RecentEvents";
 import { IdentityGraph } from "@/components/dashboard/IdentityGraph";
+import { FunnelWidget } from "@/components/dashboard/FunnelWidget";
 import { Activity, Users, Send, Clock, CheckCircle, AlertCircle, Code } from "lucide-react";
 import { useEventsCount } from "@/hooks/useEvents";
 import { useIdentitiesCount } from "@/hooks/useIdentities";
@@ -60,72 +61,73 @@ const Dashboard = () => {
           <RecentEvents />
         </div>
 
-        {/* Identity section */}
+        {/* Funnel & Identity section */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <FunnelWidget />
           <IdentityGraph />
-          
-          {/* Quick actions */}
-          <div className="metric-card">
-            <h3 className="text-lg font-semibold mb-4">Setup Checklist</h3>
-            <div className="space-y-4">
-              <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    {hasApiKey ? (
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-yellow-500" />
-                    )}
-                    <span className="font-medium">Create API Key</span>
-                  </div>
+        </div>
+
+        {/* Setup checklist */}
+        <div className="metric-card">
+          <h3 className="text-lg font-semibold mb-4">Setup Checklist</h3>
+          <div className="space-y-4">
+            <div className="p-4 rounded-lg bg-muted/30 border border-border">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
                   {hasApiKey ? (
-                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">Done</span>
+                    <CheckCircle className="w-4 h-4 text-green-500" />
                   ) : (
-                    <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/settings')}>
-                      Create
-                    </Button>
+                    <AlertCircle className="w-4 h-4 text-yellow-500" />
                   )}
+                  <span className="font-medium">Create API Key</span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Generate an API key to authenticate event tracking.
-                </p>
+                {hasApiKey ? (
+                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">Done</span>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/settings')}>
+                    Create
+                  </Button>
+                )}
               </div>
+              <p className="text-sm text-muted-foreground">
+                Generate an API key to authenticate event tracking.
+              </p>
+            </div>
 
-              <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    <Code className="w-4 h-4 text-muted-foreground" />
-                    <span className="font-medium">Install JS Snippet</span>
-                  </div>
-                  <span className="text-xs px-2 py-1 rounded bg-yellow-500/20 text-yellow-600">Pending</span>
+            <div className="p-4 rounded-lg bg-muted/30 border border-border">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Code className="w-4 h-4 text-muted-foreground" />
+                  <span className="font-medium">Install JS Snippet</span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Add our tracking snippet to start capturing browser events.
-                </p>
+                <span className="text-xs px-2 py-1 rounded bg-yellow-500/20 text-yellow-600">Pending</span>
               </div>
+              <p className="text-sm text-muted-foreground">
+                Add our tracking snippet to start capturing browser events.
+              </p>
+            </div>
 
-              <div className="p-4 rounded-lg bg-muted/30 border border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    {klaviyoConnected ? (
-                      <CheckCircle className="w-4 h-4 text-green-500" />
-                    ) : (
-                      <AlertCircle className="w-4 h-4 text-yellow-500" />
-                    )}
-                    <span className="font-medium">Connect Klaviyo</span>
-                  </div>
+            <div className="p-4 rounded-lg bg-muted/30 border border-border">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
                   {klaviyoConnected ? (
-                    <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">Connected</span>
+                    <CheckCircle className="w-4 h-4 text-green-500" />
                   ) : (
-                    <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/destinations')}>
-                      Connect
-                    </Button>
+                    <AlertCircle className="w-4 h-4 text-yellow-500" />
                   )}
+                  <span className="font-medium">Connect Klaviyo</span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Sync profiles and events to your Klaviyo account.
-                </p>
+                {klaviyoConnected ? (
+                  <span className="text-xs px-2 py-1 rounded bg-green-500/20 text-green-600">Connected</span>
+                ) : (
+                  <Button size="sm" variant="outline" onClick={() => navigate('/dashboard/destinations')}>
+                    Connect
+                  </Button>
+                )}
               </div>
+              <p className="text-sm text-muted-foreground">
+                Sync profiles and events to your Klaviyo account.
+              </p>
             </div>
           </div>
         </div>
