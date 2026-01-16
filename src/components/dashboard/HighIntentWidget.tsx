@@ -1,8 +1,12 @@
-import { Flame, ShoppingCart, CreditCard, Eye, Loader2, ArrowRight } from "lucide-react";
+import { Flame, ShoppingCart, CreditCard, Eye, Loader2, ArrowRight, CheckCircle } from "lucide-react";
 import { useHighIntentUsers } from "@/hooks/useHighIntentUsers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
+import { supabase } from "@/integrations/supabase/client";
+import { useState } from "react";
+import { toast } from "sonner";
 
 const stageIcons: Record<string, React.ElementType> = {
   checkout: CreditCard,
@@ -27,6 +31,44 @@ const stageLabels: Record<string, string> = {
 
 export const HighIntentWidget = () => {
   const { data: users, isLoading } = useHighIntentUsers();
+  const { currentWorkspace } = useWorkspace();
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<{ exported: number } | null>(null);
+
+  const handleExportToKlaviyo = async () => {
+    if (!currentWorkspace) {
+      toast.error("Nessun workspace selezionato");
+      return;
+    }
+
+    setIsExporting(true);
+    setExportResult(null);
+
+    try {
+      const { data, error } = await supabase.functions.invoke('export-high-intent', {
+        body: { 
+          workspace_id: currentWorkspace.id,
+          min_intent_score: 30,
+          limit: 100 
+        }
+      });
+
+      if (error) throw error;
+
+      if (data.error) {
+        toast.error(data.error);
+        return;
+      }
+
+      setExportResult({ exported: data.exported });
+      toast.success(`${data.exported} profili esportati su Klaviyo`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error("Errore nell'export verso Klaviyo");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   if (isLoading) {
     return (
@@ -149,9 +191,28 @@ export const HighIntentWidget = () => {
       {/* Action button */}
       {highIntentUsers.length > 0 && (
         <div className="mt-4 pt-4 border-t border-border">
-          <Button variant="ghost" className="w-full justify-between text-sm" disabled>
-            <span>Export to Klaviyo</span>
-            <ArrowRight className="w-4 h-4" />
+          <Button 
+            variant="ghost" 
+            className="w-full justify-between text-sm" 
+            onClick={handleExportToKlaviyo}
+            disabled={isExporting}
+          >
+            <span className="flex items-center gap-2">
+              {exportResult ? (
+                <>
+                  <CheckCircle className="w-4 h-4 text-green-500" />
+                  {exportResult.exported} esportati
+                </>
+              ) : isExporting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Esportazione...
+                </>
+              ) : (
+                "Export to Klaviyo"
+              )}
+            </span>
+            {!isExporting && !exportResult && <ArrowRight className="w-4 h-4" />}
           </Button>
         </div>
       )}
