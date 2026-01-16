@@ -4,37 +4,41 @@ import { corsHeaders } from '../_shared/cors.ts';
 /**
  * IdentitySync - Klaviyo Sync Function
  * 
- * Behavior Intelligence Layer - Only syncs HIGH-VALUE signals
+ * Behavior Intelligence Layer - Syncs behavioral signals to Klaviyo
  * 
- * ✅ What gets synced:
- * - Profile properties with behavioral scores (sf_intent_score, sf_drop_off_stage, etc.)
- * - High-value trigger events (SF High Intent Detected, SF Dropped From Checkout, etc.)
- * 
- * ❌ What gets BLOCKED:
- * - Raw page views, product views, scroll events
- * - Users without email (prevents ghost profiles)
- * - Duplicate events
+ * STRATEGY:
+ * 1. ALWAYS update profile properties (sf_*) for users WITH email
+ * 2. Only track HIGH-VALUE events as Klaviyo events
+ * 3. Block noise events from event tracking (but still update profiles!)
  */
 
-// ===== HIGH-VALUE EVENTS THAT TRIGGER KLAVIYO TRACKING =====
+// ===== HIGH-VALUE EVENTS THAT TRIGGER KLAVIYO EVENT TRACKING =====
 const HIGH_VALUE_EVENTS = new Set([
   // Cart events (intent signals)
   'Add to Cart',
   'Product Added',
   'Cart Viewed',
   
-  // Checkout events (high intent)
+  // Checkout events (high intent) - FIXED: Added all variants
   'Begin Checkout',
   'Checkout Started',
+  'Started Checkout',
+  'checkout_started',
+  'begin_checkout',
   
   // Purchase events
   'Purchase',
   'Order Completed',
+  'Placed Order',
+  
+  // Abandonment signals (valuable for flows)
+  'Checkout Abandoned',
+  'Cart Abandoned',
 ]);
 
-// ===== BLOCKED EVENTS (noise) =====
-const BLOCKED_EVENTS = new Set([
-  // Page events (aggregated instead)
+// ===== EVENTS THAT BLOCK EVENT TRACKING (but still update profile!) =====
+const BLOCKED_FROM_EVENTS = new Set([
+  // Page events (aggregated into profile properties instead)
   'Page View',
   'Session Start',
   'Scroll Depth',
@@ -51,10 +55,21 @@ const BLOCKED_EVENTS = new Set([
   // Form events
   'Form Viewed',
   'Form Submitted',
+  
+  // Email events (come from Klaviyo, no need to send back)
+  'Received Email',
+  'Opened Email',
+  'Clicked Email',
+  'Subscribed to List',
+  
+  // System/identify events
+  'Customer Updated',
+  '_sf_verification_ping',
 ]);
 
 interface KlaviyoProfile {
   type: 'profile';
+  id?: string;
   attributes: {
     email?: string;
     phone_number?: string;
@@ -87,7 +102,10 @@ interface KlaviyoEvent {
   };
 }
 
-async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Promise<{ success: boolean; error?: string }> {
+async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Promise<{ success: boolean; error?: string; profileId?: string }> {
+  console.log(`[Klaviyo] Upserting profile: ${profile.attributes.email}`);
+  console.log(`[Klaviyo] Properties: ${JSON.stringify(Object.keys(profile.attributes.properties || {}))}`);
+  
   const response = await fetch('https://a.klaviyo.com/api/profiles/', {
     method: 'POST',
     headers: {
@@ -99,10 +117,12 @@ async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Pr
   });
 
   if (response.status === 409) {
+    // Profile exists, update it
     const existing = await response.json();
     const profileId = existing?.errors?.[0]?.meta?.duplicate_profile_id;
     
     if (profileId) {
+      console.log(`[Klaviyo] Profile exists (${profileId}), updating...`);
       const updateResponse = await fetch(`https://a.klaviyo.com/api/profiles/${profileId}`, {
         method: 'PATCH',
         headers: {
@@ -115,21 +135,29 @@ async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Pr
       
       if (!updateResponse.ok) {
         const error = await updateResponse.text();
+        console.error(`[Klaviyo] Update failed: ${error}`);
         return { success: false, error };
       }
+      console.log(`[Klaviyo] Profile updated successfully`);
+      return { success: true, profileId };
     }
     return { success: true };
   }
 
   if (!response.ok) {
     const error = await response.text();
+    console.error(`[Klaviyo] Create failed: ${error}`);
     return { success: false, error };
   }
 
-  return { success: true };
+  const result = await response.json();
+  console.log(`[Klaviyo] Profile created successfully`);
+  return { success: true, profileId: result?.data?.id };
 }
 
 async function trackKlaviyoEvent(apiKey: string, event: KlaviyoEvent): Promise<{ success: boolean; error?: string }> {
+  console.log(`[Klaviyo] Tracking event: ${event.attributes.metric.data.attributes.name} for ${event.attributes.profile.data.attributes.email}`);
+  
   const response = await fetch('https://a.klaviyo.com/api/events/', {
     method: 'POST',
     headers: {
@@ -142,43 +170,103 @@ async function trackKlaviyoEvent(apiKey: string, event: KlaviyoEvent): Promise<{
 
   if (!response.ok) {
     const error = await response.text();
+    console.error(`[Klaviyo] Event tracking failed: ${error}`);
     return { success: false, error };
   }
 
+  console.log(`[Klaviyo] Event tracked successfully`);
   return { success: true };
 }
 
 /**
- * Check if an event should be sent to Klaviyo
+ * Check if an event should be sent as a Klaviyo event
  */
-function shouldSendEvent(eventName: string): boolean {
-  // Explicitly blocked events
-  if (BLOCKED_EVENTS.has(eventName)) {
+function shouldTrackAsEvent(eventName: string): boolean {
+  // Normalize event name for comparison
+  const normalized = eventName.toLowerCase().replace(/[_\s]/g, ' ').trim();
+  
+  // Check explicit blocks
+  if (BLOCKED_FROM_EVENTS.has(eventName)) {
     return false;
   }
-  // Only allow high-value events
-  return HIGH_VALUE_EVENTS.has(eventName);
+  
+  // Check if it's a high-value event
+  for (const highValue of HIGH_VALUE_EVENTS) {
+    if (highValue.toLowerCase() === normalized || eventName === highValue) {
+      return true;
+    }
+  }
+  
+  return false;
 }
 
 /**
  * Map event name to Klaviyo format with SF prefix
  */
 function mapEventName(eventName: string): string {
+  const normalized = eventName.toLowerCase().replace(/[_\s]/g, ' ').trim();
+  
   const map: Record<string, string> = {
-    'Add to Cart': 'SF Added to Cart',
-    'Product Added': 'SF Added to Cart',
-    'Cart Viewed': 'SF Viewed Cart',
-    'Begin Checkout': 'SF Started Checkout',
-    'Checkout Started': 'SF Started Checkout',
-    'Purchase': 'SF Placed Order',
-    'Order Completed': 'SF Placed Order',
+    'add to cart': 'SF Added to Cart',
+    'product added': 'SF Added to Cart',
+    'cart viewed': 'SF Viewed Cart',
+    'begin checkout': 'SF Started Checkout',
+    'checkout started': 'SF Started Checkout',
+    'started checkout': 'SF Started Checkout',
+    'purchase': 'SF Placed Order',
+    'order completed': 'SF Placed Order',
+    'placed order': 'SF Placed Order',
+    'checkout abandoned': 'SF Checkout Abandoned',
+    'cart abandoned': 'SF Cart Abandoned',
   };
-  return map[eventName] || `SF ${eventName}`;
+  
+  return map[normalized] || `SF ${eventName}`;
+}
+
+/**
+ * Determine drop-off stage from event history
+ */
+function determineDropOffStage(computed: Record<string, unknown>, eventType?: string, eventName?: string): string {
+  // If they completed a purchase, they're not in a drop-off stage
+  if (computed.orders_count && Number(computed.orders_count) > 0) {
+    return 'purchased';
+  }
+  
+  // Check based on current event
+  if (eventType === 'checkout' || eventName?.toLowerCase().includes('checkout')) {
+    return 'checkout_abandoned';
+  }
+  
+  if (eventType === 'cart' || eventName?.toLowerCase().includes('cart')) {
+    return 'cart_abandoned';
+  }
+  
+  // Check existing drop_off_stage
+  if (computed.drop_off_stage) {
+    return computed.drop_off_stage as string;
+  }
+  
+  // Check computed values
+  if (computed.checkout_abandoned_at) {
+    return 'checkout_abandoned';
+  }
+  
+  if (computed.cart_abandoned_at) {
+    return 'cart_abandoned';
+  }
+  
+  // Default based on engagement
+  const intentScore = Number(computed.intent_score) || 0;
+  if (intentScore >= 30) {
+    return 'engaged';
+  }
+  
+  return 'browsing';
 }
 
 /**
  * Build behavioral profile properties from computed traits
- * These are the ONLY properties synced to Klaviyo
+ * These are synced to Klaviyo on EVERY event (not just high-value ones)
  */
 function buildBehavioralProperties(user: {
   id: string;
@@ -188,8 +276,23 @@ function buildBehavioralProperties(user: {
   customer_ids?: string[];
   anonymous_ids?: string[];
   traits?: Record<string, unknown>;
-}): Record<string, unknown> {
+}, eventType?: string, eventName?: string): Record<string, unknown> {
   const computed = user.computed || {};
+  const now = new Date().toISOString();
+  
+  // Determine drop-off stage
+  const dropOffStage = determineDropOffStage(computed, eventType, eventName);
+  
+  // Set abandonment timestamps based on stage
+  let checkoutAbandonedAt = computed.checkout_abandoned_at ?? null;
+  let cartAbandonedAt = computed.cart_abandoned_at ?? null;
+  
+  if (dropOffStage === 'checkout_abandoned' && !checkoutAbandonedAt) {
+    checkoutAbandonedAt = now;
+  }
+  if (dropOffStage === 'cart_abandoned' && !cartAbandonedAt) {
+    cartAbandonedAt = now;
+  }
   
   return {
     // === IDENTIFICATION ===
@@ -203,18 +306,18 @@ function buildBehavioralProperties(user: {
     sf_depth_score: computed.depth_score ?? 0,
     sf_recency_days: computed.recency_days ?? 0,
     
-    // === BEHAVIORAL SIGNALS ===
-    sf_top_category: computed.top_category_30d ?? null,
-    sf_drop_off_stage: computed.drop_off_stage ?? 'visitor',
+    // === BEHAVIORAL SIGNALS (KEY FOR FLOWS!) ===
+    sf_top_category: computed.top_category_30d ?? computed.top_category ?? null,
+    sf_drop_off_stage: dropOffStage,
     
     // === ENGAGEMENT COUNTS ===
-    sf_viewed_products_7d: computed.unique_products_viewed ?? 0,
+    sf_viewed_products_7d: computed.unique_products_viewed ?? computed.product_views_7d ?? 0,
     sf_categories_viewed: computed.unique_categories_viewed ?? 0,
     sf_session_count_30d: computed.session_count_30d ?? 1,
     
-    // === ABANDONMENT TIMESTAMPS (for flow triggers) ===
-    sf_cart_abandoned_at: computed.cart_abandoned_at ?? null,
-    sf_checkout_abandoned_at: computed.checkout_abandoned_at ?? null,
+    // === ABANDONMENT TIMESTAMPS (CRITICAL FOR FLOW TRIGGERS!) ===
+    sf_cart_abandoned_at: cartAbandonedAt,
+    sf_checkout_abandoned_at: checkoutAbandonedAt,
     
     // === REVENUE METRICS ===
     sf_lifetime_value: computed.lifetime_value ?? 0,
@@ -228,7 +331,9 @@ function buildBehavioralProperties(user: {
     sf_last_klaviyo_event: computed.last_klaviyo_event ?? null,
     
     // === METADATA ===
-    sf_computed_at: computed.last_computed_at ?? null,
+    sf_last_event_type: eventType ?? computed.last_event_type ?? null,
+    sf_last_event_name: eventName ?? computed.last_event_name ?? null,
+    sf_computed_at: now,
     sf_customer_ids: user.customer_ids && user.customer_ids.length > 0 ? user.customer_ids.join(',') : null,
     sf_anonymous_ids_count: user.anonymous_ids?.length ?? 0,
   };
@@ -243,6 +348,8 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    console.log('[sync-klaviyo] Starting sync run...');
 
     // Get pending sync jobs (limit to 50 per run)
     const { data: jobs, error: jobsError } = await supabase
@@ -260,7 +367,7 @@ Deno.serve(async (req) => {
       .limit(50);
 
     if (jobsError) {
-      console.error('Error fetching sync jobs:', jobsError);
+      console.error('[sync-klaviyo] Error fetching sync jobs:', jobsError);
       return new Response(
         JSON.stringify({ error: 'Failed to fetch sync jobs' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -268,16 +375,21 @@ Deno.serve(async (req) => {
     }
 
     if (!jobs || jobs.length === 0) {
+      console.log('[sync-klaviyo] No pending jobs');
       return new Response(
         JSON.stringify({ message: 'No pending jobs', processed: 0 }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
+    console.log(`[sync-klaviyo] Processing ${jobs.length} jobs...`);
+
     let successCount = 0;
     let failCount = 0;
     let skippedCount = 0;
-    let blockedCount = 0;
+    let profileUpdates = 0;
+    let eventsSent = 0;
+    let eventsBlocked = 0;
 
     for (const job of jobs) {
       // Mark as running
@@ -318,114 +430,113 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      let result: { success: boolean; error?: string };
+      const user = job.unified_user;
+      const event = job.event;
 
-      if (job.job_type === 'profile_upsert' && job.unified_user) {
-        const user = job.unified_user;
-        
-        // ⛔ SKIP: Non sincronizzare profili senza email (prevents ghost profiles)
-        if (!user.primary_email) {
-          await supabase
-            .from('sync_jobs')
-            .update({ 
-              status: 'completed', 
-              last_error: 'Skipped - no email (identity not resolved)',
-              completed_at: new Date().toISOString()
-            })
-            .eq('id', job.id);
-          skippedCount++;
-          continue;
-        }
-        
-        const profile: KlaviyoProfile = {
-          type: 'profile',
-          attributes: {
-            email: user.primary_email,
-            phone_number: user.phone || undefined,
-            external_id: user.id,
-            properties: buildBehavioralProperties(user),
-          },
-        };
-        result = await upsertKlaviyoProfile(klaviyoApiKey, profile);
-        
-      } else if (job.job_type === 'event_track' && job.event) {
-        const event = job.event;
-        const user = job.unified_user;
-        
-        // ⛔ SKIP: Non tracciare eventi per utenti senza email
-        if (!user?.primary_email) {
-          await supabase
-            .from('sync_jobs')
-            .update({ 
-              status: 'completed', 
-              last_error: 'Skipped - no email',
-              completed_at: new Date().toISOString()
-            })
-            .eq('id', job.id);
-          skippedCount++;
-          continue;
-        }
-        
-        // ⛔ BLOCK: Non inviare eventi a basso valore (noise)
-        const eventName = event.event_name || event.event_type;
-        if (!shouldSendEvent(eventName)) {
-          await supabase
-            .from('sync_jobs')
-            .update({ 
-              status: 'completed', 
-              last_error: `Blocked - low-value event: ${eventName}`,
-              completed_at: new Date().toISOString()
-            })
-            .eq('id', job.id);
-          blockedCount++;
-          continue;
-        }
-        
-        const klaviyoEventName = mapEventName(eventName);
-        
-        // Enrich event with behavioral context
-        const enrichedProperties = {
-          ...(event.properties as Record<string, unknown>),
-          sf_event_id: event.id,
-          sf_session_id: event.session_id,
-          sf_intent_score: user.computed?.intent_score ?? 0,
-          sf_drop_off_stage: user.computed?.drop_off_stage ?? 'visitor',
-        };
-        
-        const klaviyoEvent: KlaviyoEvent = {
-          type: 'event',
-          attributes: {
-            metric: {
-              data: {
-                type: 'metric',
-                attributes: { name: klaviyoEventName },
-              },
-            },
-            profile: {
-              data: {
-                type: 'profile',
-                attributes: {
-                  email: user.primary_email,
-                  external_id: user.id,
-                },
-              },
-            },
-            properties: enrichedProperties,
-            time: event.event_time,
-            unique_id: event.id,
-          },
-        };
-        result = await trackKlaviyoEvent(klaviyoApiKey, klaviyoEvent);
-        
-      } else {
-        result = { success: false, error: 'Unknown job type or missing data' };
-      }
-
-      if (result.success) {
+      // ⛔ SKIP: Users without email (prevents ghost profiles)
+      if (!user?.primary_email) {
         await supabase
           .from('sync_jobs')
           .update({ 
             status: 'completed', 
+            last_error: 'Skipped - no email',
+            completed_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+        skippedCount++;
+        continue;
+      }
+
+      let profileResult: { success: boolean; error?: string } = { success: true };
+      let eventResult: { success: boolean; error?: string } | null = null;
+      let eventBlocked = false;
+
+      // Get event details for context
+      const eventName = event?.event_name || event?.event_type || '';
+      const eventType = event?.event_type || '';
+
+      // ===== STEP 1: ALWAYS UPDATE PROFILE =====
+      // This ensures sf_* properties are ALWAYS synced to Klaviyo
+      const profile: KlaviyoProfile = {
+        type: 'profile',
+        attributes: {
+          email: user.primary_email,
+          phone_number: user.phone || undefined,
+          external_id: user.id,
+          properties: buildBehavioralProperties(user, eventType, eventName),
+        },
+      };
+      
+      profileResult = await upsertKlaviyoProfile(klaviyoApiKey, profile);
+      if (profileResult.success) {
+        profileUpdates++;
+      }
+
+      // ===== STEP 2: CONDITIONALLY TRACK EVENT =====
+      if (job.job_type === 'event_track' && event) {
+        if (shouldTrackAsEvent(eventName)) {
+          // This is a high-value event, track it!
+          const klaviyoEventName = mapEventName(eventName);
+          
+          const enrichedProperties = {
+            ...(event.properties as Record<string, unknown>),
+            sf_event_id: event.id,
+            sf_session_id: event.session_id,
+            sf_intent_score: user.computed?.intent_score ?? 0,
+            sf_drop_off_stage: determineDropOffStage(user.computed || {}, eventType, eventName),
+          };
+          
+          const klaviyoEvent: KlaviyoEvent = {
+            type: 'event',
+            attributes: {
+              metric: {
+                data: {
+                  type: 'metric',
+                  attributes: { name: klaviyoEventName },
+                },
+              },
+              profile: {
+                data: {
+                  type: 'profile',
+                  attributes: {
+                    email: user.primary_email,
+                    external_id: user.id,
+                  },
+                },
+              },
+              properties: enrichedProperties,
+              time: event.event_time,
+              unique_id: event.id,
+            },
+          };
+          
+          eventResult = await trackKlaviyoEvent(klaviyoApiKey, klaviyoEvent);
+          if (eventResult.success) {
+            eventsSent++;
+          }
+        } else {
+          // Event blocked from tracking (but profile was still updated!)
+          eventBlocked = true;
+          eventsBlocked++;
+          console.log(`[sync-klaviyo] Event blocked from tracking: ${eventName} (profile still updated)`);
+        }
+      }
+
+      // Determine overall success
+      const overallSuccess = profileResult.success && (!eventResult || eventResult.success);
+
+      if (overallSuccess) {
+        const note = eventBlocked 
+          ? `Profile updated, event blocked: ${eventName}` 
+          : eventResult 
+            ? 'Profile + Event synced' 
+            : 'Profile synced';
+            
+        await supabase
+          .from('sync_jobs')
+          .update({ 
+            status: 'completed', 
+            last_error: eventBlocked ? `Blocked event: ${eventName}` : null,
             completed_at: new Date().toISOString() 
           })
           .eq('id', job.id);
@@ -436,7 +547,16 @@ Deno.serve(async (req) => {
           .from('destinations')
           .update({ last_sync_at: new Date().toISOString(), last_error: null })
           .eq('id', destination.id);
+          
+        // Mark event as synced
+        if (event && !eventBlocked) {
+          await supabase
+            .from('events')
+            .update({ synced_at: new Date().toISOString(), status: 'synced' })
+            .eq('id', event.id);
+        }
       } else {
+        const error = profileResult.error || eventResult?.error || 'Unknown error';
         const newStatus = job.attempts >= 2 ? 'failed' : 'pending';
         const scheduledAt = job.attempts >= 2 
           ? null 
@@ -446,7 +566,7 @@ Deno.serve(async (req) => {
           .from('sync_jobs')
           .update({ 
             status: newStatus,
-            last_error: result.error,
+            last_error: error,
             scheduled_at: scheduledAt,
             completed_at: newStatus === 'failed' ? new Date().toISOString() : null
           })
@@ -456,27 +576,33 @@ Deno.serve(async (req) => {
           failCount++;
           await supabase
             .from('destinations')
-            .update({ last_error: result.error })
+            .update({ last_error: error })
             .eq('id', destination.id);
         }
       }
     }
 
+    const summary = {
+      message: 'Sync completed - Behavior Intelligence Mode',
+      processed: jobs.length,
+      success: successCount,
+      failed: failCount,
+      skipped: skippedCount,
+      profileUpdates,
+      eventsSent,
+      eventsBlocked,
+      note: 'Profile properties (sf_*) are ALWAYS updated. Only high-value events are tracked.',
+    };
+    
+    console.log('[sync-klaviyo] Summary:', JSON.stringify(summary));
+
     return new Response(
-      JSON.stringify({ 
-        message: 'Sync completed - Behavior Intelligence Mode',
-        processed: jobs.length,
-        success: successCount,
-        failed: failCount,
-        skipped: skippedCount,
-        blocked: blockedCount,
-        note: 'Low-value events (page views, product views) are blocked. Only high-intent actions synced.',
-      }),
+      JSON.stringify(summary),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
   } catch (error) {
-    console.error('Sync error:', error);
+    console.error('[sync-klaviyo] Error:', error);
     return new Response(
       JSON.stringify({ error: 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
