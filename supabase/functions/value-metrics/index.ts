@@ -47,6 +47,23 @@ interface ValueMetrics {
     medium: number;  // 30-69
     low: number;     // 0-29
   };
+  
+  // EXTENDED FUNNEL METRICS (NEW)
+  extended_funnel: {
+    // Product view abandonment (intent >= 30)
+    product_views_total: number;
+    product_view_high_intent: number;  // intent >= 30
+    product_view_synced: number;
+    
+    // Cart abandonment (intent >= 50)
+    cart_events_total: number;
+    cart_high_intent: number;  // intent >= 50
+    cart_synced: number;
+    
+    // Potential additional reach
+    browse_abandonment_potential: number;
+    cart_abandonment_potential: number;
+  };
 }
 
 Deno.serve(async (req) => {
@@ -207,6 +224,88 @@ Deno.serve(async (req) => {
       ? Math.round((recoveredUsers / checkoutStartedTotal) * 100) 
       : 0;
 
+    // ===== EXTENDED FUNNEL QUERIES =====
+    
+    // Product view events
+    let productViewQuery = supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_type', 'product')
+      .gte('event_time', periodStart.toISOString())
+      .lte('event_time', periodEnd.toISOString());
+    
+    if (workspaceId) {
+      productViewQuery = productViewQuery.eq('workspace_id', workspaceId);
+    }
+    
+    const { count: productViewsTotal } = await productViewQuery;
+
+    // Product view high intent (intent >= 30) - profiles
+    let productHighIntentQuery = supabase
+      .from('users_unified')
+      .select('id', { count: 'exact', head: true })
+      .not('primary_email', 'is', null)
+      .gte('computed->>intent_score', '30')
+      .not('computed->>last_product_viewed_at', 'is', null);
+    
+    if (workspaceId) {
+      productHighIntentQuery = productHighIntentQuery.eq('workspace_id', workspaceId);
+    }
+    
+    const { count: productViewHighIntent } = await productHighIntentQuery;
+
+    // Product view synced
+    let productSyncedQuery = supabase
+      .from('users_unified')
+      .select('id', { count: 'exact', head: true })
+      .eq('computed->flags->>product_view_synced', 'true');
+    
+    if (workspaceId) {
+      productSyncedQuery = productSyncedQuery.eq('workspace_id', workspaceId);
+    }
+    
+    const { count: productViewSynced } = await productSyncedQuery;
+
+    // Cart events
+    let cartEventsQuery = supabase
+      .from('events')
+      .select('id', { count: 'exact', head: true })
+      .eq('event_type', 'cart')
+      .gte('event_time', periodStart.toISOString())
+      .lte('event_time', periodEnd.toISOString());
+    
+    if (workspaceId) {
+      cartEventsQuery = cartEventsQuery.eq('workspace_id', workspaceId);
+    }
+    
+    const { count: cartEventsTotal } = await cartEventsQuery;
+
+    // Cart high intent (intent >= 50) - profiles
+    let cartHighIntentQuery = supabase
+      .from('users_unified')
+      .select('id', { count: 'exact', head: true })
+      .not('primary_email', 'is', null)
+      .gte('computed->>intent_score', '50')
+      .not('computed->>last_cart_at', 'is', null);
+    
+    if (workspaceId) {
+      cartHighIntentQuery = cartHighIntentQuery.eq('workspace_id', workspaceId);
+    }
+    
+    const { count: cartHighIntent } = await cartHighIntentQuery;
+
+    // Cart synced
+    let cartSyncedQuery = supabase
+      .from('users_unified')
+      .select('id', { count: 'exact', head: true })
+      .eq('computed->flags->>cart_synced', 'true');
+    
+    if (workspaceId) {
+      cartSyncedQuery = cartSyncedQuery.eq('workspace_id', workspaceId);
+    }
+    
+    const { count: cartSynced } = await cartSyncedQuery;
+
     const metrics: ValueMetrics = {
       period: {
         start: periodStart.toISOString(),
@@ -235,6 +334,19 @@ Deno.serve(async (req) => {
         medium: mediumIntentCount || 0,
         low: lowIntentCount || 0,
       },
+      
+      extended_funnel: {
+        product_views_total: productViewsTotal || 0,
+        product_view_high_intent: productViewHighIntent || 0,
+        product_view_synced: productViewSynced || 0,
+        
+        cart_events_total: cartEventsTotal || 0,
+        cart_high_intent: cartHighIntent || 0,
+        cart_synced: cartSynced || 0,
+        
+        browse_abandonment_potential: (productViewHighIntent || 0) - (productViewSynced || 0),
+        cart_abandonment_potential: (cartHighIntent || 0) - (cartSynced || 0),
+      },
     };
 
     console.log('[VALUE-METRICS] Metrics calculated:');
@@ -242,6 +354,8 @@ Deno.serve(async (req) => {
     console.log(`  identitysync_checkout_abandoned_profiles: ${metrics.profiles_with_sf_checkout_abandoned_at}`);
     console.log(`  recovered_users: ${metrics.recovered_users}`);
     console.log(`  recovery_rate: ${metrics.recovery_rate_percent}%`);
+    console.log(`  browse_abandonment_potential: ${metrics.extended_funnel.browse_abandonment_potential}`);
+    console.log(`  cart_abandonment_potential: ${metrics.extended_funnel.cart_abandonment_potential}`);
 
     return new Response(
       JSON.stringify(metrics),
