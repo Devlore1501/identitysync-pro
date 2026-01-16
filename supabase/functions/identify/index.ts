@@ -11,11 +11,17 @@ interface IdentifyPayload {
 }
 
 Deno.serve(async (req) => {
+  console.log('=== IDENTIFY FUNCTION CALLED ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  
   if (req.method === 'OPTIONS') {
+    console.log('CORS preflight request');
     return new Response(null, { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
+    console.log('Method not allowed:', req.method);
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -51,8 +57,16 @@ Deno.serve(async (req) => {
     const payload: IdentifyPayload = await req.json();
     const workspaceId = authResult.workspaceId!;
 
+    console.log('=== IDENTIFY RECEIVED ===');
+    console.log('Anonymous ID:', payload.anonymous_id || 'not provided');
+    console.log('Email:', payload.email || 'not provided');
+    console.log('User ID:', payload.user_id || 'not provided');
+    console.log('Phone:', payload.phone || 'not provided');
+    console.log('Workspace:', workspaceId);
+
     // Need at least one identifier
     if (!payload.email && !payload.user_id && !payload.anonymous_id && !payload.phone) {
+      console.log('ERROR: No identifier provided');
       return new Response(
         JSON.stringify({ error: 'At least one identifier is required' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
