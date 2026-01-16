@@ -15,7 +15,16 @@ import {
   Loader2,
   Copy,
   ExternalLink,
-  CheckCircle2
+  CheckCircle2,
+  Sparkles,
+  Users,
+  Target,
+  TrendingUp,
+  Mail,
+  ShoppingCart,
+  Eye,
+  UserCheck,
+  Send
 } from "lucide-react";
 import {
   Select,
@@ -29,9 +38,11 @@ import { useUpdateWorkspace } from "@/hooks/useWorkspaceSettings";
 import { toast } from "sonner";
 
 const STEPS = [
-  { id: "workspace", title: "Configura Workspace", icon: Globe },
-  { id: "install", title: "Installa Pixel", icon: Code },
-  { id: "verify", title: "Verifica", icon: Check },
+  { id: "welcome", title: "Benvenuto", icon: Sparkles },
+  { id: "how-it-works", title: "Come Funziona", icon: Target },
+  { id: "workspace", title: "Workspace", icon: Globe },
+  { id: "install", title: "Pixel", icon: Code },
+  { id: "destination", title: "Destination", icon: Send },
   { id: "done", title: "Completato", icon: Zap },
 ];
 
@@ -49,6 +60,7 @@ const OnboardingPage = () => {
   const [workspaceName, setWorkspaceName] = useState(currentWorkspace?.name || "");
   const [domain, setDomain] = useState(currentWorkspace?.domain || "");
   const [platform, setPlatform] = useState(currentWorkspace?.platform || "shopify");
+  const [destinationType, setDestinationType] = useState<"klaviyo" | "skip">("klaviyo");
 
   const progress = ((currentStep + 1) / STEPS.length) * 100;
 
@@ -87,28 +99,11 @@ const OnboardingPage = () => {
         platform: platform || null,
       });
       await refetch();
-      setCurrentStep(1);
+      setCurrentStep(3);
     } catch (error) {
       toast.error("Errore nel salvataggio");
     }
     setIsLoading(false);
-  };
-
-  const handleVerify = async () => {
-    setVerificationStatus("checking");
-    
-    // Simulate verification (in production this would check for real events)
-    await new Promise(resolve => setTimeout(resolve, 3000));
-    
-    // For demo, randomly succeed or fail
-    const success = Math.random() > 0.3;
-    setVerificationStatus(success ? "success" : "failed");
-    
-    if (success) {
-      toast.success("Pixel verificato con successo!");
-    } else {
-      toast.error("Nessun evento rilevato. Verifica l'installazione.");
-    }
   };
 
   const handleComplete = () => {
@@ -116,23 +111,31 @@ const OnboardingPage = () => {
     navigate("/dashboard");
   };
 
+  const nextStep = () => setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1));
+  const prevStep = () => setCurrentStep(prev => Math.max(prev - 1, 0));
+
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
       {/* Header */}
-      <header className="border-b border-border">
+      <header className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-0 z-10">
         <div className="container px-4 py-4 flex items-center justify-between">
-          <div className="font-bold text-xl">IdentitySync</div>
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+              <Zap className="w-4 h-4 text-primary-foreground" />
+            </div>
+            <span className="font-bold text-xl">IdentitySync</span>
+          </div>
           <Button variant="ghost" size="sm" onClick={() => navigate("/dashboard")}>
             Salta per ora
           </Button>
         </div>
       </header>
 
-      <main className="container px-4 py-12">
-        <div className="max-w-2xl mx-auto">
+      <main className="container px-4 py-8 md:py-12">
+        <div className="max-w-3xl mx-auto">
           {/* Progress */}
           <div className="mb-8">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center justify-between mb-4 overflow-x-auto pb-2">
               {STEPS.map((step, index) => {
                 const Icon = step.icon;
                 const isActive = index === currentStep;
@@ -141,31 +144,214 @@ const OnboardingPage = () => {
                 return (
                   <div 
                     key={step.id}
-                    className={`flex items-center gap-2 ${
+                    className={`flex items-center gap-2 flex-shrink-0 ${
                       isActive ? "text-primary" : isCompleted ? "text-green-500" : "text-muted-foreground"
                     }`}
                   >
-                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-                      isActive ? "bg-primary text-primary-foreground" : 
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${
+                      isActive ? "bg-primary text-primary-foreground scale-110" : 
                       isCompleted ? "bg-green-500 text-white" : "bg-muted"
                     }`}>
                       {isCompleted ? <Check className="w-4 h-4" /> : <Icon className="w-4 h-4" />}
                     </div>
-                    <span className="text-sm font-medium hidden sm:block">{step.title}</span>
+                    <span className="text-xs font-medium hidden lg:block">{step.title}</span>
+                    {index < STEPS.length - 1 && (
+                      <div className={`w-8 h-0.5 mx-1 hidden sm:block ${
+                        isCompleted ? "bg-green-500" : "bg-muted"
+                      }`} />
+                    )}
                   </div>
                 );
               })}
             </div>
             <Progress value={progress} className="h-2" />
+            <p className="text-sm text-muted-foreground mt-2 text-center">
+              Step {currentStep + 1} di {STEPS.length}
+            </p>
           </div>
 
           {/* Step Content */}
-          <Card className="animate-fade-in">
-            {/* Step 1: Workspace Setup */}
+          <Card className="animate-fade-in border-border/50 shadow-xl">
+            
+            {/* Step 0: Welcome */}
             {currentStep === 0 && (
               <>
+                <CardHeader className="text-center pb-2">
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <Sparkles className="w-10 h-10 text-primary-foreground" />
+                  </div>
+                  <CardTitle className="text-2xl md:text-3xl">Benvenuto in IdentitySync! 🎉</CardTitle>
+                  <CardDescription className="text-base mt-2">
+                    Trasforma visitatori anonimi in clienti identificati e aumenta le tue conversioni.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-4">
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-blue-500/10 to-transparent border border-blue-500/20">
+                      <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center flex-shrink-0">
+                        <Users className="w-5 h-5 text-blue-500" />
+                      </div>
+                      <div>
+                        <div className="font-semibold">Identifica Visitatori Anonimi</div>
+                        <div className="text-sm text-muted-foreground">
+                          Riconosci gli utenti che ritornano, anche senza login, unificando cookie, email e device.
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-orange-500/10 to-transparent border border-orange-500/20">
+                      <div className="w-10 h-10 rounded-lg bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                        <Target className="w-5 h-5 text-orange-500" />
+                      </div>
+                      <div>
+                        <div className="font-semibold">Scoring Comportamentale</div>
+                        <div className="text-sm text-muted-foreground">
+                          Calcola l'intent score basato su page view, add to cart e checkout per prioritizzare i contatti.
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-start gap-4 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-transparent border border-green-500/20">
+                      <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                        <TrendingUp className="w-5 h-5 text-green-500" />
+                      </div>
+                      <div>
+                        <div className="font-semibold">Sync Automatico con Klaviyo</div>
+                        <div className="text-sm text-muted-foreground">
+                          I profili high-intent vengono sincronizzati automaticamente per trigger email personalizzate.
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-primary/5 border border-primary/10">
+                    <p className="text-sm text-center">
+                      <span className="font-medium">In soli 5 minuti</span> configurerai tutto il necessario per iniziare a recuperare vendite perse.
+                    </p>
+                  </div>
+                  
+                  <Button onClick={nextStep} className="w-full" size="lg">
+                    Iniziamo
+                    <ArrowRight className="w-4 h-4 ml-2" />
+                  </Button>
+                </CardContent>
+              </>
+            )}
+
+            {/* Step 1: How It Works */}
+            {currentStep === 1 && (
+              <>
+                <CardHeader className="text-center pb-2">
+                  <Badge variant="outline" className="w-fit mx-auto mb-2">Come Funziona</Badge>
+                  <CardTitle className="text-xl md:text-2xl">Il Flusso di IdentitySync</CardTitle>
+                  <CardDescription>
+                    Ecco come trasformiamo i visitatori anonimi in vendite.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Visual Funnel */}
+                  <div className="relative">
+                    {/* Step 1 */}
+                    <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border">
+                      <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
+                        <Eye className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs">1</Badge>
+                          <span className="font-semibold">Visitatore naviga</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Il pixel traccia page view, prodotti visti, tempo sulla pagina
+                        </p>
+                      </div>
+                      <div className="text-2xl font-bold text-muted-foreground/50">→</div>
+                    </div>
+                    
+                    <div className="w-0.5 h-4 bg-border mx-auto" />
+                    
+                    {/* Step 2 */}
+                    <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border">
+                      <div className="w-12 h-12 rounded-full bg-orange-500/20 flex items-center justify-center flex-shrink-0">
+                        <ShoppingCart className="w-6 h-6 text-orange-500" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs">2</Badge>
+                          <span className="font-semibold">Aggiunge al carrello</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          L'intent score sale, il profilo diventa "warm"
+                        </p>
+                      </div>
+                      <div className="text-2xl font-bold text-muted-foreground/50">→</div>
+                    </div>
+                    
+                    <div className="w-0.5 h-4 bg-border mx-auto" />
+                    
+                    {/* Step 3 */}
+                    <div className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 border">
+                      <div className="w-12 h-12 rounded-full bg-red-500/20 flex items-center justify-center flex-shrink-0">
+                        <UserCheck className="w-6 h-6 text-red-500" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Badge variant="secondary" className="text-xs">3</Badge>
+                          <span className="font-semibold">Identità unificata</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Cookie + email + phone → profilo unico
+                        </p>
+                      </div>
+                      <div className="text-2xl font-bold text-muted-foreground/50">→</div>
+                    </div>
+                    
+                    <div className="w-0.5 h-4 bg-border mx-auto" />
+                    
+                    {/* Step 4 */}
+                    <div className="flex items-center gap-4 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-green-500/5 border border-green-500/20">
+                      <div className="w-12 h-12 rounded-full bg-green-500/20 flex items-center justify-center flex-shrink-0">
+                        <Mail className="w-6 h-6 text-green-500" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <Badge className="text-xs bg-green-500">4</Badge>
+                          <span className="font-semibold text-green-600 dark:text-green-400">Sync → Email automatica</span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Klaviyo riceve i dati e invia email di recupero personalizzata
+                        </p>
+                      </div>
+                      <div className="text-2xl font-bold text-green-500">💰</div>
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-primary/5 border border-primary/10 text-center">
+                    <div className="text-2xl font-bold text-primary mb-1">+15-25%</div>
+                    <p className="text-sm text-muted-foreground">
+                      Recupero medio carrelli abbandonati con IdentitySync
+                    </p>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={prevStep}>
+                      <ArrowLeft className="w-4 h-4 mr-2" />
+                      Indietro
+                    </Button>
+                    <Button onClick={nextStep} className="flex-1">
+                      Configuriamo il Workspace
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </>
+            )}
+
+            {/* Step 2: Workspace Setup */}
+            {currentStep === 2 && (
+              <>
                 <CardHeader>
-                  <Badge variant="outline" className="w-fit mb-2">Step 1 di 4</Badge>
+                  <Badge variant="outline" className="w-fit mb-2">Configurazione</Badge>
                   <CardTitle>Configura il tuo Workspace</CardTitle>
                   <CardDescription>
                     Inserisci le informazioni del tuo sito per iniziare a raccogliere dati.
@@ -179,6 +365,9 @@ const OnboardingPage = () => {
                       value={workspaceName}
                       onChange={(e) => setWorkspaceName(e.target.value)}
                     />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Usalo per distinguere diversi progetti o brand
+                    </p>
                   </div>
                   <div>
                     <label className="text-sm font-medium mb-1.5 block">Dominio Sito</label>
@@ -204,22 +393,28 @@ const OnboardingPage = () => {
                     </Select>
                   </div>
                   
-                  <Button onClick={handleSaveWorkspace} className="w-full" disabled={isLoading}>
-                    {isLoading ? (
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    ) : null}
-                    Continua
-                    <ArrowRight className="w-4 h-4 ml-2" />
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button variant="outline" onClick={prevStep}>
+                      <ArrowLeft className="w-4 h-4 mr-2" />
+                      Indietro
+                    </Button>
+                    <Button onClick={handleSaveWorkspace} className="flex-1" disabled={isLoading}>
+                      {isLoading ? (
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      ) : null}
+                      Salva e Continua
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </div>
                 </CardContent>
               </>
             )}
 
-            {/* Step 2: Install Pixel */}
-            {currentStep === 1 && (
+            {/* Step 3: Install Pixel */}
+            {currentStep === 3 && (
               <>
                 <CardHeader>
-                  <Badge variant="outline" className="w-fit mb-2">Step 2 di 4</Badge>
+                  <Badge variant="outline" className="w-fit mb-2">Installazione</Badge>
                   <CardTitle>Installa il Pixel</CardTitle>
                   <CardDescription>
                     Aggiungi questo codice al tuo sito, prima del tag &lt;/head&gt;.
@@ -227,7 +422,7 @@ const OnboardingPage = () => {
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="relative">
-                    <pre className="p-4 rounded-lg bg-muted text-sm overflow-x-auto">
+                    <pre className="p-4 rounded-lg bg-muted text-xs overflow-x-auto border">
                       <code>{pixelSnippet}</code>
                     </pre>
                     <Button
@@ -242,22 +437,38 @@ const OnboardingPage = () => {
 
                   {platform === "shopify" && (
                     <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                      <h4 className="font-medium mb-2">📋 Per Shopify:</h4>
-                      <ol className="text-sm text-muted-foreground space-y-1 list-decimal list-inside">
-                        <li>Vai su Online Store → Themes → Edit code</li>
-                        <li>Apri theme.liquid</li>
-                        <li>Incolla lo snippet prima di &lt;/head&gt;</li>
-                        <li>Salva</li>
+                      <h4 className="font-medium mb-2 flex items-center gap-2">
+                        <img src="https://cdn.shopify.com/shopifycloud/brochure/assets/brand-assets/shopify-logo-primary-logo-456baa801ee66a0a435671082365958316831c9960c480451dd0330bcdae304f.svg" alt="Shopify" className="h-4" />
+                        Istruzioni per Shopify:
+                      </h4>
+                      <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                        <li>Vai su <strong>Online Store → Themes</strong></li>
+                        <li>Clicca <strong>⋮ → Edit code</strong></li>
+                        <li>Apri <strong>theme.liquid</strong></li>
+                        <li>Incolla lo snippet prima di <code className="bg-muted px-1 rounded">&lt;/head&gt;</code></li>
+                        <li>Clicca <strong>Save</strong></li>
+                      </ol>
+                    </div>
+                  )}
+
+                  {platform === "woocommerce" && (
+                    <div className="p-4 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                      <h4 className="font-medium mb-2">🟣 Istruzioni per WooCommerce:</h4>
+                      <ol className="text-sm text-muted-foreground space-y-2 list-decimal list-inside">
+                        <li>Vai su <strong>Aspetto → Editor del tema</strong></li>
+                        <li>Seleziona <strong>header.php</strong></li>
+                        <li>Incolla lo snippet prima di <code className="bg-muted px-1 rounded">&lt;/head&gt;</code></li>
+                        <li>Oppure usa un plugin come <strong>Insert Headers and Footers</strong></li>
                       </ol>
                     </div>
                   )}
 
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setCurrentStep(0)}>
+                    <Button variant="outline" onClick={prevStep}>
                       <ArrowLeft className="w-4 h-4 mr-2" />
                       Indietro
                     </Button>
-                    <Button className="flex-1" onClick={() => setCurrentStep(2)}>
+                    <Button className="flex-1" onClick={nextStep}>
                       Ho installato il pixel
                       <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
@@ -266,150 +477,162 @@ const OnboardingPage = () => {
               </>
             )}
 
-            {/* Step 3: Verify */}
-            {currentStep === 2 && (
+            {/* Step 4: Destination */}
+            {currentStep === 4 && (
               <>
                 <CardHeader>
-                  <Badge variant="outline" className="w-fit mb-2">Step 3 di 4</Badge>
-                  <CardTitle>Verifica Installazione</CardTitle>
+                  <Badge variant="outline" className="w-fit mb-2">Integrazione</Badge>
+                  <CardTitle>Collega una Destination</CardTitle>
                   <CardDescription>
-                    Visita il tuo sito e verifica che il pixel stia raccogliendo eventi.
+                    Dove vuoi sincronizzare i profili identificati?
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="flex flex-col items-center justify-center py-8">
-                    {verificationStatus === "idle" && (
-                      <>
-                        <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
-                          <Globe className="w-8 h-8 text-muted-foreground" />
+                  <div className="grid gap-4">
+                    <button
+                      type="button"
+                      onClick={() => setDestinationType("klaviyo")}
+                      className={`flex items-start gap-4 p-4 rounded-xl border-2 transition-all text-left ${
+                        destinationType === "klaviyo" 
+                          ? "border-primary bg-primary/5" 
+                          : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-lg bg-[#111] flex items-center justify-center flex-shrink-0">
+                        <span className="text-white font-bold text-lg">K</span>
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold flex items-center gap-2">
+                          Klaviyo
+                          <Badge variant="secondary" className="text-xs">Consigliato</Badge>
                         </div>
-                        <p className="text-center text-muted-foreground mb-4">
-                          Visita il tuo sito in una nuova scheda, poi clicca "Verifica".
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Sincronizza profili con intent score, eventi comportamentali e trigger automatici.
                         </p>
-                        {domain && (
-                          <Button variant="outline" asChild className="mb-4">
-                            <a href={`https://${domain}`} target="_blank" rel="noopener noreferrer">
-                              Apri {domain}
-                              <ExternalLink className="w-4 h-4 ml-2" />
-                            </a>
-                          </Button>
-                        )}
-                      </>
-                    )}
-                    
-                    {verificationStatus === "checking" && (
-                      <>
-                        <Loader2 className="w-16 h-16 text-primary animate-spin mb-4" />
-                        <p className="text-center text-muted-foreground">
-                          Verificando installazione...
-                        </p>
-                      </>
-                    )}
-                    
-                    {verificationStatus === "success" && (
-                      <>
-                        <div className="w-16 h-16 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
-                          <CheckCircle2 className="w-8 h-8 text-green-500" />
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          <Badge variant="outline" className="text-xs">Browse Abandonment</Badge>
+                          <Badge variant="outline" className="text-xs">Cart Abandonment</Badge>
+                          <Badge variant="outline" className="text-xs">Checkout Abandonment</Badge>
                         </div>
-                        <p className="text-center font-medium text-green-500">
-                          Pixel installato correttamente!
+                      </div>
+                      {destinationType === "klaviyo" && (
+                        <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setDestinationType("skip")}
+                      className={`flex items-start gap-4 p-4 rounded-xl border-2 transition-all text-left ${
+                        destinationType === "skip" 
+                          ? "border-primary bg-primary/5" 
+                          : "border-border hover:border-primary/50"
+                      }`}
+                    >
+                      <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                        <ArrowRight className="w-6 h-6 text-muted-foreground" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold">Configura dopo</div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Vai alla dashboard e configura le destination in seguito dalle impostazioni.
                         </p>
-                      </>
-                    )}
-                    
-                    {verificationStatus === "failed" && (
-                      <>
-                        <div className="w-16 h-16 rounded-full bg-destructive/20 flex items-center justify-center mb-4">
-                          <Globe className="w-8 h-8 text-destructive" />
-                        </div>
-                        <p className="text-center text-destructive mb-2">
-                          Nessun evento rilevato
-                        </p>
-                        <p className="text-center text-sm text-muted-foreground">
-                          Verifica che lo snippet sia stato inserito correttamente.
-                        </p>
-                      </>
-                    )}
+                      </div>
+                      {destinationType === "skip" && (
+                        <CheckCircle2 className="w-5 h-5 text-primary flex-shrink-0" />
+                      )}
+                    </button>
                   </div>
 
+                  {destinationType === "klaviyo" && (
+                    <div className="p-4 rounded-lg bg-muted/50 border">
+                      <p className="text-sm text-muted-foreground">
+                        👉 Potrai configurare la tua API Key di Klaviyo dalle <strong>Impostazioni → Destinations</strong> dopo aver completato l'onboarding.
+                      </p>
+                    </div>
+                  )}
+                  
                   <div className="flex gap-2">
-                    <Button variant="outline" onClick={() => setCurrentStep(1)}>
+                    <Button variant="outline" onClick={prevStep}>
                       <ArrowLeft className="w-4 h-4 mr-2" />
                       Indietro
                     </Button>
-                    {verificationStatus === "success" ? (
-                      <Button className="flex-1" onClick={() => setCurrentStep(3)}>
-                        Continua
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </Button>
-                    ) : (
-                      <Button 
-                        className="flex-1" 
-                        onClick={handleVerify}
-                        disabled={verificationStatus === "checking"}
-                      >
-                        {verificationStatus === "failed" ? "Riprova" : "Verifica"}
-                      </Button>
-                    )}
-                  </div>
-                  
-                  {verificationStatus !== "success" && (
-                    <Button 
-                      variant="ghost" 
-                      className="w-full" 
-                      onClick={() => setCurrentStep(3)}
-                    >
-                      Salta verifica
+                    <Button className="flex-1" onClick={nextStep}>
+                      Continua
+                      <ArrowRight className="w-4 h-4 ml-2" />
                     </Button>
-                  )}
+                  </div>
                 </CardContent>
               </>
             )}
 
-            {/* Step 4: Done */}
-            {currentStep === 3 && (
+            {/* Step 5: Done */}
+            {currentStep === 5 && (
               <>
                 <CardHeader className="text-center">
-                  <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mx-auto mb-4">
-                    <Zap className="w-10 h-10 text-green-500" />
+                  <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-green-500 to-green-600 flex items-center justify-center mx-auto mb-4 shadow-lg">
+                    <CheckCircle2 className="w-10 h-10 text-white" />
                   </div>
-                  <CardTitle className="text-2xl">Sei pronto! 🎉</CardTitle>
+                  <CardTitle className="text-2xl">Sei pronto! 🚀</CardTitle>
                   <CardDescription>
                     Il tuo workspace è configurato e pronto per raccogliere dati.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid gap-4">
-                    <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50">
-                      <Check className="w-5 h-5 text-green-500 mt-0.5" />
+                  <div className="grid gap-3">
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                      <Check className="w-5 h-5 text-green-500" />
                       <div>
-                        <div className="font-medium">Workspace configurato</div>
-                        <div className="text-sm text-muted-foreground">{workspaceName}</div>
+                        <span className="font-medium">Workspace:</span>{" "}
+                        <span className="text-muted-foreground">{workspaceName || currentWorkspace?.name}</span>
                       </div>
                     </div>
-                    <div className="flex items-start gap-3 p-4 rounded-lg bg-muted/50">
-                      <Check className="w-5 h-5 text-green-500 mt-0.5" />
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                      <Check className="w-5 h-5 text-green-500" />
                       <div>
-                        <div className="font-medium">Pixel pronto</div>
-                        <div className="text-sm text-muted-foreground">
-                          {verificationStatus === "success" ? "Verificato e funzionante" : "In attesa di eventi"}
-                        </div>
+                        <span className="font-medium">Pixel:</span>{" "}
+                        <span className="text-muted-foreground">Pronto per l'installazione</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                      <Check className="w-5 h-5 text-green-500" />
+                      <div>
+                        <span className="font-medium">Destination:</span>{" "}
+                        <span className="text-muted-foreground">
+                          {destinationType === "klaviyo" ? "Klaviyo (da configurare)" : "Da configurare"}
+                        </span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="p-4 rounded-lg bg-primary/10 border border-primary/20">
-                    <h4 className="font-medium mb-2">🚀 Prossimi passi:</h4>
-                    <ul className="text-sm text-muted-foreground space-y-1 list-disc list-inside">
-                      <li>Collega la tua prima destination (es. Klaviyo)</li>
-                      <li>Configura il tracciamento eventi e-commerce</li>
-                      <li>Esplora la dashboard analytics</li>
+                  <div className="p-4 rounded-xl bg-gradient-to-r from-primary/10 to-primary/5 border border-primary/20">
+                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-primary" />
+                      Prossimi passi nella Dashboard:
+                    </h4>
+                    <ul className="text-sm text-muted-foreground space-y-2">
+                      <li className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 text-xs font-medium">1</span>
+                        <span>Verifica che il pixel stia ricevendo eventi in <strong>Events</strong></span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 text-xs font-medium">2</span>
+                        <span>Collega Klaviyo in <strong>Destinations</strong> con la tua Private API Key</span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 text-xs font-medium">3</span>
+                        <span>Crea i Flow di recupero su Klaviyo usando le proprietà <code className="bg-muted px-1 rounded text-xs">sf_*</code></span>
+                      </li>
+                      <li className="flex items-start gap-2">
+                        <span className="w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0 text-xs font-medium">4</span>
+                        <span>Monitora i risultati nel <strong>Value Metric</strong> sulla dashboard</span>
+                      </li>
                     </ul>
                   </div>
 
                   <Button className="w-full" size="lg" onClick={handleComplete}>
+                    <Zap className="w-4 h-4 mr-2" />
                     Vai alla Dashboard
-                    <ArrowRight className="w-4 h-4 ml-2" />
                   </Button>
                 </CardContent>
               </>
