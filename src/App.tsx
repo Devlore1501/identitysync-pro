@@ -16,6 +16,9 @@ import Destinations from "./pages/Destinations";
 import DashboardSettings from "./pages/DashboardSettings";
 import AuditLogs from "./pages/AuditLogs";
 import NotFound from "./pages/NotFound";
+import PricingPage from "./pages/Pricing";
+import CheckoutPage from "./pages/Checkout";
+import OnboardingPage from "./pages/Onboarding";
 
 const queryClient = new QueryClient();
 
@@ -29,6 +32,13 @@ const App = () => (
           <BrowserRouter>
             <Routes>
               <Route path="/" element={<Index />} />
+              <Route path="/pricing" element={<PricingPage />} />
+              <Route path="/checkout/:planId" element={<CheckoutPage />} />
+              <Route path="/onboarding" element={
+                <ProtectedRoute>
+                  <OnboardingPage />
+                </ProtectedRoute>
+              } />
               <Route path="/auth" element={<Auth />} />
               <Route path="/dashboard" element={
                 <ProtectedRoute>

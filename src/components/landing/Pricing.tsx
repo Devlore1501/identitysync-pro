@@ -110,7 +110,7 @@ export const Pricing = () => {
                 ))}
               </ul>
 
-              <Link to="/dashboard">
+              <Link to="/pricing">
                 <Button 
                   variant={plan.popular ? "hero" : "outline"} 
                   className="w-full"
