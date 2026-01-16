@@ -29,3 +29,9 @@ verify_jwt = false
 
 [functions.sync-scheduler]
 verify_jwt = false
+
+[functions.background-processor]
+verify_jwt = false
+
+[functions.test-webhook]
+verify_jwt = false
