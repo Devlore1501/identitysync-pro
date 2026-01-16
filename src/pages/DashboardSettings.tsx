@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle, Sparkles, FlaskConical } from "lucide-react";
+import { Copy, Trash2, Plus, Shield, Database, Bell, CreditCard, Loader2, Check, Code, Settings, Globe, AlertTriangle, Sparkles, FlaskConical, Layers } from "lucide-react";
 import { useDestinations } from "@/hooks/useDestinations";
 import { supabase } from "@/integrations/supabase/client";
 import { useApiKeys } from "@/hooks/useApiKeys";
@@ -15,6 +15,8 @@ import { useBillingUsage } from "@/hooks/useBillingUsage";
 import { TrackingSnippet } from "@/components/dashboard/TrackingSnippet";
 import { PixelStatus } from "@/components/dashboard/PixelStatus";
 import { KlaviyoSyncSection } from "@/components/dashboard/KlaviyoSyncSection";
+import { WorkspaceManager } from "@/components/dashboard/WorkspaceManager";
+import { BillingSection } from "@/components/dashboard/BillingSection";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -190,6 +192,10 @@ const DashboardSettings = () => {
               <Settings className="w-4 h-4" />
               General
             </TabsTrigger>
+            <TabsTrigger value="sites" className="flex items-center gap-2">
+              <Layers className="w-4 h-4" />
+              Siti
+            </TabsTrigger>
             <TabsTrigger value="installation" className="flex items-center gap-2">
               <Code className="w-4 h-4" />
               Installation
@@ -198,7 +204,21 @@ const DashboardSettings = () => {
               <Shield className="w-4 h-4" />
               API Keys
             </TabsTrigger>
+            <TabsTrigger value="billing" className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4" />
+              Fatturazione
+            </TabsTrigger>
           </TabsList>
+
+          {/* Sites Tab */}
+          <TabsContent value="sites" className="space-y-8">
+            <WorkspaceManager />
+          </TabsContent>
+
+          {/* Billing Tab */}
+          <TabsContent value="billing" className="space-y-8">
+            <BillingSection />
+          </TabsContent>
 
           {/* General Tab */}
           <TabsContent value="general" className="space-y-8">
