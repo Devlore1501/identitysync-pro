@@ -692,6 +692,64 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_billing_usage: {
+        Args: { p_workspace_id: string }
+        Returns: undefined
+      }
+      process_event_fast: {
+        Args: {
+          p_anonymous_id: string
+          p_consent_state?: Json
+          p_context: Json
+          p_customer_id?: string
+          p_email?: string
+          p_event_name: string
+          p_event_time?: string
+          p_event_type: string
+          p_phone?: string
+          p_properties: Json
+          p_session_id?: string
+          p_source?: string
+          p_workspace_id: string
+        }
+        Returns: {
+          event_id: string
+          is_duplicate: boolean
+          unified_user_id: string
+        }[]
+      }
+      resolve_identity: {
+        Args: {
+          p_anonymous_id: string
+          p_customer_id?: string
+          p_email?: string
+          p_phone?: string
+          p_source?: string
+          p_workspace_id: string
+        }
+        Returns: string
+      }
+      schedule_sync_jobs: {
+        Args: {
+          p_context: Json
+          p_event_id: string
+          p_event_name: string
+          p_event_type: string
+          p_properties: Json
+          p_unified_user_id: string
+          p_workspace_id: string
+        }
+        Returns: number
+      }
+      update_computed_traits_fast: {
+        Args: {
+          p_event_name: string
+          p_event_type: string
+          p_properties: Json
+          p_unified_user_id: string
+        }
+        Returns: undefined
+      }
       user_has_workspace_access: {
         Args: { _user_id: string; _workspace_id: string }
         Returns: boolean
