@@ -44,21 +44,22 @@ export function useFunnelStats(days: number = 7) {
         eventCounts[name] = (eventCounts[name] || 0) + 1;
       });
 
-      // Define funnel steps in order
+      // Define funnel steps in order - match multiple event name variations
       const funnelSteps = [
-        { key: 'Page View', label: 'Visitatori' },
-        { key: 'View Collection', label: 'Collezioni' },
-        { key: 'View Item', label: 'Prodotti' },
-        { key: 'Add to Cart', label: 'Carrello' },
-        { key: 'Begin Checkout', label: 'Checkout' },
-        { key: 'Purchase', label: 'Acquisti' },
+        { keys: ['Page View'], label: 'Visitatori' },
+        { keys: ['View Collection', 'Collection Viewed'], label: 'Collezioni' },
+        { keys: ['View Item', 'Product Viewed'], label: 'Prodotti' },
+        { keys: ['Add to Cart', 'Added to Cart', 'Product Added'], label: 'Carrello' },
+        { keys: ['Begin Checkout', 'Started Checkout', 'Checkout Started'], label: 'Checkout' },
+        { keys: ['Purchase', 'Order Completed', 'Order Placed'], label: 'Acquisti' },
       ];
 
       const steps: FunnelStep[] = [];
       let previousCount = 0;
 
       funnelSteps.forEach((step, index) => {
-        const count = eventCounts[step.key] || 0;
+        // Sum counts for all matching event name variations
+        const count = step.keys.reduce((sum, key) => sum + (eventCounts[key] || 0), 0);
         const conversionRate = index === 0 ? 100 : (previousCount > 0 ? (count / previousCount) * 100 : 0);
         const dropOff = index === 0 ? 0 : (previousCount > 0 ? ((previousCount - count) / previousCount) * 100 : 0);
 
@@ -69,12 +70,13 @@ export function useFunnelStats(days: number = 7) {
           dropOff: Math.round(dropOff * 10) / 10,
         });
 
-        previousCount = count;
+        // Use actual count for next step comparison (not 0 if no events at this stage)
+        previousCount = count || previousCount;
       });
 
       // Overall conversion: Purchases / Page Views
       const pageViews = eventCounts['Page View'] || 0;
-      const purchases = eventCounts['Purchase'] || 0;
+      const purchases = (eventCounts['Purchase'] || 0) + (eventCounts['Order Completed'] || 0) + (eventCounts['Order Placed'] || 0);
       const overallConversion = pageViews > 0 ? (purchases / pageViews) * 100 : 0;
 
       return {
