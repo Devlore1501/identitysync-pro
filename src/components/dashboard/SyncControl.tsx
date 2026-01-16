@@ -1,15 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { RefreshCw, CheckCircle2, XCircle, Loader2, Zap } from 'lucide-react';
+import { RefreshCw, CheckCircle2, XCircle, Loader2, Zap, Play, Pause } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSyncStats } from '@/hooks/useDestinations';
 import { useQueryClient } from '@tanstack/react-query';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
 
 interface SyncResult {
   processed?: number;
   success?: number;
   failed?: number;
+  skipped?: number;
   message?: string;
   error?: string;
 }
@@ -18,17 +21,44 @@ export function SyncControl() {
   const [syncing, setSyncing] = useState(false);
   const [processingBackground, setProcessingBackground] = useState(false);
   const [lastResult, setLastResult] = useState<SyncResult | null>(null);
+  const [autoSync, setAutoSync] = useState(false);
+  const autoSyncRef = useRef<NodeJS.Timeout | null>(null);
   const { data: syncStats, refetch: refetchStats } = useSyncStats();
   const queryClient = useQueryClient();
 
+  // Auto-sync effect
+  useEffect(() => {
+    if (autoSync) {
+      // Run immediately
+      handleForceSync();
+      
+      // Then run every 30 seconds
+      autoSyncRef.current = setInterval(() => {
+        handleForceSync();
+      }, 30000);
+    } else {
+      if (autoSyncRef.current) {
+        clearInterval(autoSyncRef.current);
+        autoSyncRef.current = null;
+      }
+    }
+
+    return () => {
+      if (autoSyncRef.current) {
+        clearInterval(autoSyncRef.current);
+      }
+    };
+  }, [autoSync]);
+
   const handleForceSync = async () => {
+    if (syncing) return;
     setSyncing(true);
     setLastResult(null);
 
     try {
-      // Call sync-klaviyo directly to process pending jobs
+      // Call sync-scheduler to process all destinations
       const response = await fetch(
-        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-klaviyo`,
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/sync-scheduler`,
         {
           method: 'POST',
           headers: {
@@ -39,23 +69,39 @@ export function SyncControl() {
       );
 
       const data = await response.json();
-      setLastResult(data);
+      
+      // Parse results from scheduler
+      const klaviyoResult = data.results?.klaviyo || {};
+      const result: SyncResult = {
+        processed: klaviyoResult.processed || 0,
+        success: klaviyoResult.success || 0,
+        failed: klaviyoResult.failed || 0,
+        skipped: klaviyoResult.skipped || 0,
+      };
+      setLastResult(result);
 
       if (response.ok) {
-        if (data.processed > 0) {
-          toast.success(`Sync completato: ${data.success}/${data.processed} job processati`);
-        } else {
-          toast.info('Nessun job pending da processare');
+        if (result.processed && result.processed > 0) {
+          const parts = [];
+          if (result.success) parts.push(`${result.success} sync`);
+          if (result.skipped) parts.push(`${result.skipped} skip`);
+          if (result.failed) parts.push(`${result.failed} fail`);
+          toast.success(`Sync: ${parts.join(', ')}`);
+        } else if (!autoSync) {
+          toast.info('Nessun job pending');
         }
       } else {
-        toast.error(`Errore sync: ${data.error || 'Unknown error'}`);
+        toast.error(`Errore: ${data.error || 'Unknown'}`);
       }
 
       // Refresh stats
       refetchStats();
       queryClient.invalidateQueries({ queryKey: ['sync-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['system-health'] });
     } catch (error) {
-      toast.error('Errore durante il sync');
+      if (!autoSync) {
+        toast.error('Errore durante il sync');
+      }
       setLastResult({ error: 'Network error' });
     } finally {
       setSyncing(false);
@@ -84,25 +130,25 @@ export function SyncControl() {
         const updates = [
           data.recencyUpdated > 0 ? `${data.recencyUpdated} recency` : null,
           data.signalsRecomputed > 0 ? `${data.signalsRecomputed} signals` : null,
-          data.profileSyncsScheduled > 0 ? `${data.profileSyncsScheduled} syncs scheduled` : null,
-          data.abandonmentDetected > 0 ? `${data.abandonmentDetected} abandonments` : null,
+          data.profileSyncsScheduled > 0 ? `${data.profileSyncsScheduled} syncs` : null,
+          data.abandonmentDetected > 0 ? `${data.abandonmentDetected} abandons` : null,
         ].filter(Boolean);
 
         if (updates.length > 0) {
-          toast.success(`Background process: ${updates.join(', ')}`);
+          toast.success(`Background: ${updates.join(', ')}`);
         } else {
-          toast.info('Nessun aggiornamento necessario');
+          toast.info('Nessun aggiornamento');
         }
       } else {
-        toast.error(`Errore: ${data.error || 'Unknown error'}`);
+        toast.error(`Errore: ${data.error || 'Unknown'}`);
       }
 
-      // Refresh all relevant queries
       queryClient.invalidateQueries({ queryKey: ['behavioral-stats'] });
       queryClient.invalidateQueries({ queryKey: ['identities'] });
+      queryClient.invalidateQueries({ queryKey: ['system-health'] });
       refetchStats();
     } catch (error) {
-      toast.error('Errore durante il background processing');
+      toast.error('Errore background processing');
     } finally {
       setProcessingBackground(false);
     }
@@ -116,15 +162,40 @@ export function SyncControl() {
           Sync Control
         </CardTitle>
         <CardDescription>
-          Forza sync manuale verso Klaviyo
+          Sincronizza profili ed eventi con Klaviyo
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Auto-sync toggle */}
+        <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+          <div className="flex items-center gap-2">
+            {autoSync ? (
+              <Play className="w-4 h-4 text-green-500" />
+            ) : (
+              <Pause className="w-4 h-4 text-muted-foreground" />
+            )}
+            <Label htmlFor="auto-sync" className="text-sm font-medium cursor-pointer">
+              Auto-Sync
+            </Label>
+          </div>
+          <Switch
+            id="auto-sync"
+            checked={autoSync}
+            onCheckedChange={setAutoSync}
+          />
+        </div>
+
+        {autoSync && (
+          <p className="text-xs text-muted-foreground">
+            Sync automatico ogni 30 secondi
+          </p>
+        )}
+
         {/* Pending jobs indicator */}
         <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
           <div>
-            <p className="text-sm font-medium">Sync Jobs Pending</p>
-            <p className="text-xs text-muted-foreground">In attesa di essere processati</p>
+            <p className="text-sm font-medium">Jobs Pending</p>
+            <p className="text-xs text-muted-foreground">In attesa di sync</p>
           </div>
           <div className="text-2xl font-bold text-primary">
             {syncStats?.pending || 0}
@@ -135,19 +206,19 @@ export function SyncControl() {
         <div className="flex gap-2">
           <Button 
             onClick={handleForceSync} 
-            disabled={syncing || (syncStats?.pending === 0)}
+            disabled={syncing}
             className="flex-1"
             variant={syncStats?.pending && syncStats.pending > 0 ? "default" : "outline"}
           >
             {syncing ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Syncing...
+                Sync...
               </>
             ) : (
               <>
                 <RefreshCw className="w-4 h-4 mr-2" />
-                Sync Klaviyo
+                Sync Now
               </>
             )}
           </Button>
@@ -161,12 +232,12 @@ export function SyncControl() {
             {processingBackground ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Processing...
+                ...
               </>
             ) : (
               <>
                 <Zap className="w-4 h-4 mr-2" />
-                Recompute Traits
+                Recompute
               </>
             )}
           </Button>
@@ -189,9 +260,8 @@ export function SyncControl() {
                 <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
                 <span>
                   {lastResult.processed === 0 
-                    ? 'No pending jobs' 
-                    : `${lastResult.success}/${lastResult.processed} synced`}
-                  {lastResult.failed && lastResult.failed > 0 && ` (${lastResult.failed} failed)`}
+                    ? 'No pending' 
+                    : `${lastResult.success}✓ ${lastResult.skipped || 0}⊘ ${lastResult.failed || 0}✗`}
                 </span>
               </>
             )}
