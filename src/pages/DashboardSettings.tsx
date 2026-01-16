@@ -232,6 +232,67 @@ const DashboardSettings = () => {
               </div>
             </section>
 
+            {/* Shopify Integration */}
+            {currentWorkspace?.platform === 'shopify' && (
+              <section>
+                <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
+                  <Globe className="w-5 h-5" />
+                  Shopify Webhooks
+                </h2>
+                <div className="metric-card space-y-4">
+                  <div className="p-3 bg-primary/10 rounded-lg">
+                    <p className="text-sm font-medium text-primary mb-2">📋 Aggiungi questi webhook nel tuo Shopify Admin:</p>
+                    <p className="text-xs text-muted-foreground">Settings → Notifications → Webhooks → Create webhook</p>
+                  </div>
+                  
+                  <div className="space-y-3">
+                    {['orders/create', 'checkouts/create', 'customers/create', 'checkouts/update'].map((topic) => (
+                      <div key={topic} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                        <div>
+                          <div className="font-mono text-sm">{topic}</div>
+                          <div className="text-xs text-muted-foreground">JSON format</div>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhooks-shopify`);
+                            toast.success('Webhook URL copied!');
+                          }}
+                        >
+                          <Copy className="w-3 h-3 mr-2" />
+                          Copy URL
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  <div className="pt-4 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Webhook URL</div>
+                        <code className="text-xs text-muted-foreground font-mono break-all">
+                          {import.meta.env.VITE_SUPABASE_URL}/functions/v1/webhooks-shopify
+                        </code>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="pt-4 border-t border-border">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Shop Domain</div>
+                        <div className="text-sm text-muted-foreground">{currentWorkspace?.domain || 'Non configurato'}</div>
+                      </div>
+                      <Badge variant={currentWorkspace?.domain ? 'default' : 'destructive'}>
+                        {currentWorkspace?.domain ? 'Configurato' : 'Mancante'}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
             {/* Data Retention */}
             <section>
               <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">

@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.sync-meta]
 verify_jwt = false
+
+[functions.sync-scheduler]
+verify_jwt = false
