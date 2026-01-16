@@ -325,40 +325,8 @@ Deno.serve(async (req) => {
         };
         result = await trackKlaviyoEvent(klaviyoApiKey, klaviyoEvent);
         
-      } else if (job.job_type === 'event_sync') {
-        // Legacy event_sync job type - handle payload directly
-        const payload = job.payload as Record<string, unknown>;
-        const user = job.unified_user;
-        
-        const eventName = (payload.event_name as string) || (payload.event_type as string) || 'Unknown Event';
-        
-        const klaviyoEvent: KlaviyoEvent = {
-          type: 'event',
-          attributes: {
-            metric: {
-              data: {
-                type: 'metric',
-                attributes: {
-                  name: `SF ${eventName}`,
-                },
-              },
-            },
-            profile: {
-              data: {
-                type: 'profile',
-                attributes: {
-                  email: user?.primary_email || undefined,
-                  external_id: user?.id,
-                },
-              },
-            },
-            properties: (payload.properties as Record<string, unknown>) || {},
-            time: new Date().toISOString(),
-          },
-        };
-        result = await trackKlaviyoEvent(klaviyoApiKey, klaviyoEvent);
-        
       } else {
+        // event_sync is no longer used - all events use event_track with event_id reference
         result = { success: false, error: 'Unknown job type or missing data' };
       }
 
