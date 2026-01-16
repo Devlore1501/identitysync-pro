@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { toast } from 'sonner';
 import type { Json } from '@/integrations/supabase/types';
 
 interface Destination {
@@ -15,6 +16,41 @@ interface Destination {
   last_sync_at: string | null;
   last_error: string | null;
   created_at: string;
+}
+
+// Helper to log audit events
+async function logAuditEvent(
+  workspaceId: string,
+  action: 'create' | 'update' | 'delete',
+  resourceId: string,
+  details: Record<string, unknown>
+) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return;
+
+    await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/audit-log`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({
+          workspaceId,
+          entries: [{
+            action,
+            resource_type: 'destination',
+            resource_id: resourceId,
+            details,
+          }],
+        }),
+      }
+    );
+  } catch (err) {
+    console.error('Failed to log audit event:', err);
+  }
 }
 
 export function useDestinations() {
@@ -55,15 +91,31 @@ export function useDestinations() {
         .single();
 
       if (error) throw error;
+
+      // Log audit event
+      await logAuditEvent(currentWorkspace.id, 'create', data.id, {
+        name: destination.name,
+        type: destination.type,
+        enabled: destination.enabled,
+      });
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['destinations', currentWorkspace?.id] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      toast.success('Destination created');
+    },
+    onError: (error) => {
+      console.error('Error creating destination:', error);
+      toast.error('Failed to create destination');
     },
   });
 
   const updateDestination = useMutation({
     mutationFn: async ({ id, name, type, config, enabled }: { id: string; name?: string; type?: 'klaviyo' | 'webhook' | 'ga4'; config?: Json; enabled?: boolean }) => {
+      if (!currentWorkspace?.id) throw new Error('No workspace selected');
+
       const updates: Record<string, unknown> = {};
       if (name !== undefined) updates.name = name;
       if (type !== undefined) updates.type = type;
@@ -78,24 +130,56 @@ export function useDestinations() {
         .single();
 
       if (error) throw error;
+
+      // Log audit event
+      await logAuditEvent(currentWorkspace.id, 'update', id, updates);
+
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['destinations', currentWorkspace?.id] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      toast.success('Destination updated');
+    },
+    onError: (error) => {
+      console.error('Error updating destination:', error);
+      toast.error('Failed to update destination');
     },
   });
 
   const deleteDestination = useMutation({
     mutationFn: async (id: string) => {
+      if (!currentWorkspace?.id) throw new Error('No workspace selected');
+
+      // Get destination info for audit log
+      const { data: destInfo } = await supabase
+        .from('destinations')
+        .select('name, type')
+        .eq('id', id)
+        .single();
+
       const { error } = await supabase
         .from('destinations')
         .delete()
         .eq('id', id);
 
       if (error) throw error;
+
+      // Log audit event
+      await logAuditEvent(currentWorkspace.id, 'delete', id, {
+        name: destInfo?.name,
+        type: destInfo?.type,
+        deleted_at: new Date().toISOString(),
+      });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['destinations', currentWorkspace?.id] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      toast.success('Destination deleted');
+    },
+    onError: (error) => {
+      console.error('Error deleting destination:', error);
+      toast.error('Failed to delete destination');
     },
   });
 
