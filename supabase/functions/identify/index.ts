@@ -65,6 +65,8 @@ Deno.serve(async (req) => {
 
     // Find or create unified user
     let unifiedUserId: string | null = null;
+    let isNewUser = false;
+    let previousAnonymousIds: string[] = [];
 
     // Priority: email > user_id > phone > anonymous_id
     const identifiersToCheck = [
@@ -92,6 +94,7 @@ Deno.serve(async (req) => {
 
     // Create new unified user if not found
     if (!unifiedUserId) {
+      isNewUser = true;
       const { data: newUser, error: createError } = await supabase
         .from('users_unified')
         .insert({
@@ -124,6 +127,8 @@ Deno.serve(async (req) => {
         .single();
 
       if (existingUser) {
+        previousAnonymousIds = existingUser.anonymous_ids || [];
+        
         const updates: Record<string, unknown> = {
           last_seen_at: new Date().toISOString(),
         };
@@ -182,11 +187,133 @@ Deno.serve(async (req) => {
         });
     }
 
+    // ========================================
+    // 🔗 RETROACTIVE IDENTITY LINKING
+    // Link past anonymous events to this user
+    // ========================================
+    
+    let eventsLinked = 0;
+    let syncJobsCreated = 0;
+    
+    if (payload.anonymous_id && unifiedUserId) {
+      // Find ALL events with this anonymous_id that don't have a unified_user_id yet
+      // OR have a different unified_user_id (orphan events)
+      const { data: orphanEvents, error: orphanError } = await supabase
+        .from('events')
+        .select('id, event_name, unified_user_id')
+        .eq('workspace_id', workspaceId)
+        .eq('anonymous_id', payload.anonymous_id)
+        .or(`unified_user_id.is.null,unified_user_id.neq.${unifiedUserId}`);
+
+      if (!orphanError && orphanEvents && orphanEvents.length > 0) {
+        console.log(`Found ${orphanEvents.length} orphan events to link for anonymous_id ${payload.anonymous_id}`);
+        
+        // Update all orphan events to point to the unified user
+        const eventIds = orphanEvents.map(e => e.id);
+        const { error: updateError } = await supabase
+          .from('events')
+          .update({ unified_user_id: unifiedUserId })
+          .in('id', eventIds);
+        
+        if (updateError) {
+          console.error('Error linking orphan events:', updateError);
+        } else {
+          eventsLinked = orphanEvents.length;
+          console.log(`Successfully linked ${eventsLinked} events to user ${unifiedUserId}`);
+        }
+      }
+    }
+
+    // ========================================
+    // 📤 SCHEDULE SYNC JOBS FOR RE-SYNC
+    // Now that user has email, sync everything
+    // ========================================
+    
+    if (payload.email && unifiedUserId) {
+      // Get all enabled destinations for this workspace
+      const { data: destinations } = await supabase
+        .from('destinations')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .eq('enabled', true);
+
+      if (destinations && destinations.length > 0) {
+        const now = new Date().toISOString();
+        
+        for (const dest of destinations) {
+          // 1. Create profile upsert job (priority: sync user profile with email)
+          await supabase
+            .from('sync_jobs')
+            .insert({
+              workspace_id: workspaceId,
+              destination_id: dest.id,
+              unified_user_id: unifiedUserId,
+              job_type: 'profile_upsert',
+              status: 'pending',
+              scheduled_at: now,
+              payload: { trigger: 'identify', has_email: true }
+            });
+          syncJobsCreated++;
+
+          // 2. Get ALL events for this user that haven't been synced to this destination
+          // (includes events from before they had email)
+          const { data: unsyncedEvents } = await supabase
+            .from('events')
+            .select('id')
+            .eq('workspace_id', workspaceId)
+            .eq('unified_user_id', unifiedUserId)
+            .order('event_time', { ascending: true })
+            .limit(100); // Limit to prevent overwhelming sync
+
+          if (unsyncedEvents && unsyncedEvents.length > 0) {
+            // Check which events already have sync jobs for this destination
+            const { data: existingJobs } = await supabase
+              .from('sync_jobs')
+              .select('event_id')
+              .eq('destination_id', dest.id)
+              .in('event_id', unsyncedEvents.map(e => e.id))
+              .eq('status', 'completed');
+
+            const existingEventIds = new Set((existingJobs || []).map(j => j.event_id));
+            const eventsToSync = unsyncedEvents.filter(e => !existingEventIds.has(e.id));
+
+            if (eventsToSync.length > 0) {
+              // Create sync jobs for events that haven't been successfully synced
+              const eventSyncJobs = eventsToSync.map(event => ({
+                workspace_id: workspaceId,
+                destination_id: dest.id,
+                unified_user_id: unifiedUserId,
+                event_id: event.id,
+                job_type: 'event_track',
+                status: 'pending',
+                scheduled_at: now,
+                payload: { trigger: 'identify_retroactive' }
+              }));
+
+              const { error: insertError } = await supabase
+                .from('sync_jobs')
+                .insert(eventSyncJobs);
+
+              if (!insertError) {
+                syncJobsCreated += eventsToSync.length;
+                console.log(`Created ${eventsToSync.length} event sync jobs for destination ${dest.id}`);
+              }
+            }
+          }
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({ 
         success: true,
         unified_user_id: unifiedUserId,
-        message: 'Identity linked successfully'
+        is_new_user: isNewUser,
+        events_linked: eventsLinked,
+        sync_jobs_created: syncJobsCreated,
+        message: eventsLinked > 0 
+          ? `Identity linked successfully. ${eventsLinked} past events linked to this user.`
+          : 'Identity linked successfully'
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
