@@ -5,6 +5,7 @@ import { Progress } from '@/components/ui/progress';
 import { useSyncIntelligence } from '@/hooks/useSyncIntelligence';
 import { formatDistanceToNow } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   Zap, 
   Shield, 
@@ -57,12 +58,21 @@ export function SyncIntelligenceWidget() {
             <Zap className="w-5 h-5 text-primary" />
             <CardTitle className="text-base">Sync Intelligence</CardTitle>
           </div>
-          <Badge 
-            variant="outline" 
-            className={`${getHealthColor(stats.healthScore)} border-current`}
-          >
-            {stats.healthScore}% Health
-          </Badge>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="cursor-help">
+                <Badge 
+                  variant="outline" 
+                  className={`${getHealthColor(stats.healthScore)} border-current`}
+                >
+                  {stats.healthScore}% Health
+                </Badge>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p className="text-xs">Success rate dei sync jobs (esclude skip e block)</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
         <CardDescription>
           Solo dati ad alto valore inviati a Klaviyo

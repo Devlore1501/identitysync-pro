@@ -46,11 +46,14 @@ export function useSyncIntelligence() {
         return getEmptyStats();
       }
 
-      // Fetch completed sync jobs with their last_error to analyze
+      // Fetch sync jobs from last 7 days
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      
       const { data: jobs, error } = await supabase
         .from('sync_jobs')
         .select('id, job_type, status, last_error, completed_at')
         .eq('workspace_id', currentWorkspace.id)
+        .gte('created_at', sevenDaysAgo)
         .in('status', ['completed', 'failed']);
 
       if (error) throw error;
@@ -78,14 +81,16 @@ export function useSyncIntelligence() {
         }
 
         // Completed jobs - analyze by last_error
-        if (job.last_error?.includes('Skipped - no email')) {
+        const lastError = job.last_error || '';
+        
+        if (lastError.includes('Skipped')) {
           skipped++;
-        } else if (job.last_error?.includes('Blocked - low-value')) {
+        } else if (lastError.includes('Blocked')) {
           blocked++;
           eventsBlocked++;
           if (isRecent) blockedLast24h++;
-        } else {
-          // Successfully synced
+        } else if (lastError === '' || lastError === null) {
+          // Successfully synced - no error
           synced++;
           if (isRecent) syncedLast24h++;
           
@@ -98,6 +103,9 @@ export function useSyncIntelligence() {
           if (job.completed_at && (!lastSyncAt || job.completed_at > lastSyncAt)) {
             lastSyncAt = job.completed_at;
           }
+        } else {
+          // Has an error but not Skipped/Blocked = actual failure
+          failed++;
         }
       }
 
