@@ -272,18 +272,49 @@ function determineDropOffStage(computed: Record<string, unknown>, eventType?: st
 /**
  * Check if this user needs a FORCED profile sync
  * Returns reason string if forced, null otherwise
+ * 
+ * EXTENDED FUNNEL SYNC:
+ * - Product View: sync if intent_score >= 30 (browse abandonment)
+ * - Add to Cart: sync if intent_score >= 50 (cart abandonment)
+ * - Checkout Started: always sync (checkout abandonment)
  */
-function shouldForceProfileSync(computed: Record<string, unknown>, flags: Record<string, unknown>): string | null {
-  const dropOffStage = computed.drop_off_stage || determineDropOffStage(computed);
+function shouldForceProfileSync(
+  computed: Record<string, unknown>, 
+  flags: Record<string, unknown>,
+  eventType?: string,
+  eventName?: string
+): string | null {
+  const intentScore = Number(computed.intent_score) || 0;
+  const dropOffStage = computed.drop_off_stage || determineDropOffStage(computed, eventType, eventName);
   
-  // FORCE SYNC: checkout_abandoned but never synced
+  // FORCE SYNC: checkout_abandoned - ALWAYS (highest priority)
   if (dropOffStage === 'checkout_abandoned' && !flags.checkout_abandoned_synced) {
     return 'checkout_abandoned';
+  }
+  
+  // FORCE SYNC: cart event with intent >= 50
+  const isCartEvent = eventType === 'cart' || 
+    eventName?.toLowerCase().includes('cart') ||
+    eventName?.toLowerCase().includes('add to cart') ||
+    eventName === 'Product Added';
+    
+  if (isCartEvent && intentScore >= 50 && !flags.cart_synced) {
+    return 'cart_high_intent';
   }
   
   // FORCE SYNC: cart_abandoned but never synced
   if (dropOffStage === 'cart_abandoned' && !flags.cart_abandoned_synced) {
     return 'cart_abandoned';
+  }
+  
+  // FORCE SYNC: product view with intent >= 30
+  const isProductEvent = eventType === 'product' || 
+    eventName?.toLowerCase().includes('product') ||
+    eventName === 'Product Viewed' ||
+    eventName === 'View Item';
+    
+  if (isProductEvent && intentScore >= 30 && !flags.product_view_synced) {
+    return 'product_high_intent';
   }
   
   // FORCE SYNC: first time seeing this user
@@ -299,6 +330,11 @@ function shouldForceProfileSync(computed: Record<string, unknown>, flags: Record
  * These are synced to Klaviyo on EVERY event (not just high-value ones)
  * 
  * CRITICAL: These properties MUST always be sent to create them in Klaviyo
+ * 
+ * EXTENDED FUNNEL PROPERTIES:
+ * - sf_last_product_viewed_at: for browse abandonment flows
+ * - sf_last_cart_at: for cart abandonment flows
+ * - sf_checkout_abandoned_at: for checkout abandonment flows
  */
 function buildBehavioralProperties(user: {
   id: string;
@@ -318,6 +354,8 @@ function buildBehavioralProperties(user: {
   // Set abandonment timestamps based on stage
   let checkoutAbandonedAt = computed.checkout_abandoned_at ?? null;
   let cartAbandonedAt = computed.cart_abandoned_at ?? null;
+  let lastProductViewedAt = computed.last_product_viewed_at ?? null;
+  let lastCartAt = computed.last_cart_at ?? null;
   
   // CRITICAL: Set timestamp when stage is detected
   if (dropOffStage === 'checkout_abandoned' && !checkoutAbandonedAt) {
@@ -325,6 +363,22 @@ function buildBehavioralProperties(user: {
   }
   if (dropOffStage === 'cart_abandoned' && !cartAbandonedAt) {
     cartAbandonedAt = now;
+  }
+  
+  // Track product view timestamp for browse abandonment
+  const isProductEvent = eventType === 'product' || 
+    eventName?.toLowerCase().includes('product') ||
+    eventName === 'Product Viewed';
+  if (isProductEvent) {
+    lastProductViewedAt = now;
+  }
+  
+  // Track cart timestamp for cart abandonment
+  const isCartEvent = eventType === 'cart' || 
+    eventName?.toLowerCase().includes('cart') ||
+    eventName === 'Product Added';
+  if (isCartEvent) {
+    lastCartAt = now;
   }
   
   return {
@@ -348,7 +402,9 @@ function buildBehavioralProperties(user: {
     sf_categories_viewed: computed.unique_categories_viewed ?? 0,
     sf_session_count_30d: computed.session_count_30d ?? 1,
     
-    // === ABANDONMENT TIMESTAMPS (CRITICAL FOR FLOW TRIGGERS!) ===
+    // === FUNNEL TIMESTAMPS (EXTENDED - FOR ALL FLOW TRIGGERS!) ===
+    sf_last_product_viewed_at: lastProductViewedAt,  // NEW: Browse abandonment trigger
+    sf_last_cart_at: lastCartAt,                      // NEW: Cart abandonment trigger  
     sf_cart_abandoned_at: cartAbandonedAt,
     sf_checkout_abandoned_at: checkoutAbandonedAt,
     
@@ -494,8 +550,8 @@ Deno.serve(async (req) => {
       const computed = (user.computed || {}) as Record<string, unknown>;
       const flags = (computed.flags || {}) as Record<string, unknown>;
       
-      // Check if forced sync is needed
-      const forceReason = shouldForceProfileSync(computed, flags);
+      // Check if forced sync is needed (now with event context for intent filtering)
+      const forceReason = shouldForceProfileSync(computed, flags, eventType, eventName);
 
       // ===== STEP 1: ALWAYS UPDATE PROFILE =====
       // This ensures sf_* properties are ALWAYS synced to Klaviyo
@@ -524,13 +580,28 @@ Deno.serve(async (req) => {
         const updatedFlags: Record<string, unknown> = { ...flags, first_sync_completed: true };
         const dropOffStage = behavioralProps.sf_dropoff_stage;
         
+        // Mark checkout abandoned synced
         if (dropOffStage === 'checkout_abandoned') {
           updatedFlags.checkout_abandoned_synced = true;
           updatedFlags.checkout_abandoned_synced_at = new Date().toISOString();
         }
+        
+        // Mark cart abandoned synced
         if (dropOffStage === 'cart_abandoned') {
           updatedFlags.cart_abandoned_synced = true;
           updatedFlags.cart_abandoned_synced_at = new Date().toISOString();
+        }
+        
+        // Mark cart synced (high intent cart event)
+        if (forceReason === 'cart_high_intent') {
+          updatedFlags.cart_synced = true;
+          updatedFlags.cart_synced_at = new Date().toISOString();
+        }
+        
+        // Mark product view synced (high intent product event)
+        if (forceReason === 'product_high_intent') {
+          updatedFlags.product_view_synced = true;
+          updatedFlags.product_view_synced_at = new Date().toISOString();
         }
         
         // Persist flags and computed updates
@@ -540,6 +611,8 @@ Deno.serve(async (req) => {
           drop_off_stage: dropOffStage,
           checkout_abandoned_at: behavioralProps.sf_checkout_abandoned_at,
           cart_abandoned_at: behavioralProps.sf_cart_abandoned_at,
+          last_product_viewed_at: behavioralProps.sf_last_product_viewed_at,
+          last_cart_at: behavioralProps.sf_last_cart_at,
           last_synced_at: new Date().toISOString(),
         };
         
