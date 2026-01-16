@@ -2,14 +2,28 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
 interface GhostProfile {
-  unified_user_id: string;
-  klaviyo_profile_id?: string;
+  klaviyo_profile_id: string;
+  external_id?: string;
   deleted: boolean;
   error?: string;
 }
 
+interface KlaviyoProfile {
+  id: string;
+  attributes: {
+    email?: string;
+    external_id?: string;
+  };
+}
+
+interface KlaviyoResponse {
+  data: KlaviyoProfile[];
+  links?: {
+    next?: string;
+  };
+}
+
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -19,7 +33,6 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Parse request body
     const body = await req.json().catch(() => ({}));
     const dryRun = body.dryRun !== false; // Default to dry-run mode
     const destinationId = body.destinationId;
@@ -56,54 +69,59 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Find all unified_user_ids that were synced but have no email
-    // These are "ghost profiles" created on Klaviyo with only external_id
-    const { data: ghostJobs, error: jobsError } = await supabase
-      .from('sync_jobs')
-      .select('unified_user_id')
-      .eq('destination_id', destinationId)
-      .eq('status', 'completed')
-      .in('job_type', ['profile_upsert', 'event_track'])
-      .is('last_error', null);
+    console.log('Fetching ALL profiles from Klaviyo...');
 
-    if (jobsError) {
-      return new Response(
-        JSON.stringify({ error: `Database error: ${jobsError.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Fetch ALL profiles from Klaviyo with pagination
+    const allProfiles: KlaviyoProfile[] = [];
+    let nextUrl: string | null = 'https://a.klaviyo.com/api/profiles/?page[size]=100&fields[profile]=email,external_id';
+
+    while (nextUrl) {
+      const response = await fetch(nextUrl, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Klaviyo-API-Key ${apiKey}`,
+          'revision': '2024-02-15',
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        return new Response(
+          JSON.stringify({ error: `Failed to fetch profiles: ${response.status} - ${errorText}` }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const data: KlaviyoResponse = await response.json();
+      allProfiles.push(...data.data);
+
+      // Get next page URL
+      nextUrl = data.links?.next || null;
+
+      console.log(`Fetched ${allProfiles.length} profiles so far...`);
+
+      // Small delay to avoid rate limiting
+      if (nextUrl) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
     }
 
-    // Get unique user IDs
-    const syncedUserIds = [...new Set(
-      (ghostJobs || [])
-        .map(job => job.unified_user_id)
-        .filter(Boolean)
-    )] as string[];
+    console.log(`Total profiles fetched: ${allProfiles.length}`);
 
-    // Now check which of these users don't have an email
-    const { data: usersWithEmail, error: usersError } = await supabase
-      .from('users_unified')
-      .select('id')
-      .in('id', syncedUserIds)
-      .not('primary_email', 'is', null);
+    // Filter ghost profiles: have external_id but NO email
+    const ghostProfiles = allProfiles.filter(p => 
+      p.attributes.external_id && !p.attributes.email
+    );
 
-    if (usersError) {
-      return new Response(
-        JSON.stringify({ error: `Users query error: ${usersError.message}` }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    console.log(`Found ${ghostProfiles.length} ghost profiles (have external_id, no email)`);
 
-    const usersWithEmailIds = new Set((usersWithEmail || []).map(u => u.id));
-    const ghostUserIds = syncedUserIds.filter(id => !usersWithEmailIds.has(id));
-
-    console.log(`Found ${ghostUserIds.length} ghost profiles to cleanup`);
-
-    if (ghostUserIds.length === 0) {
+    if (ghostProfiles.length === 0) {
       return new Response(
         JSON.stringify({
-          message: 'No ghost profiles found',
+          message: 'No ghost profiles found on Klaviyo',
           dryRun,
+          totalProfiles: allProfiles.length,
           found: 0,
           deleted: 0,
           profiles: []
@@ -116,56 +134,22 @@ Deno.serve(async (req) => {
     let deletedCount = 0;
     let errorCount = 0;
 
-    // Process each ghost user
-    for (const userId of ghostUserIds) {
+    // Process each ghost profile
+    for (const profile of ghostProfiles) {
       const result: GhostProfile = {
-        unified_user_id: userId,
+        klaviyo_profile_id: profile.id,
+        external_id: profile.attributes.external_id,
         deleted: false
       };
 
+      if (dryRun) {
+        result.error = 'DRY RUN - would delete';
+        results.push(result);
+        continue;
+      }
+
       try {
-        // Search for profile on Klaviyo by external_id
-        const searchResponse = await fetch(
-          `https://a.klaviyo.com/api/profiles/?filter=equals(external_id,"${userId}")`,
-          {
-            method: 'GET',
-            headers: {
-              'Authorization': `Klaviyo-API-Key ${apiKey}`,
-              'revision': '2024-02-15',
-              'Accept': 'application/json'
-            }
-          }
-        );
-
-        if (!searchResponse.ok) {
-          const errorText = await searchResponse.text();
-          result.error = `Search failed: ${searchResponse.status} - ${errorText}`;
-          errorCount++;
-          results.push(result);
-          continue;
-        }
-
-        const searchData = await searchResponse.json();
-        const profiles = searchData?.data || [];
-
-        if (profiles.length === 0) {
-          result.error = 'Profile not found on Klaviyo';
-          results.push(result);
-          continue;
-        }
-
-        const klaviyoProfileId = profiles[0].id;
-        result.klaviyo_profile_id = klaviyoProfileId;
-
-        if (dryRun) {
-          // In dry-run mode, just mark as "would be deleted"
-          result.deleted = false;
-          result.error = 'DRY RUN - would delete';
-          results.push(result);
-          continue;
-        }
-
-        // Create a Data Privacy Deletion Job (Klaviyo doesn't support direct DELETE)
+        // Create a Data Privacy Deletion Job
         const deleteResponse = await fetch(
           'https://a.klaviyo.com/api/data-privacy-deletion-jobs/',
           {
@@ -183,7 +167,7 @@ Deno.serve(async (req) => {
                   profile: {
                     data: {
                       type: 'profile',
-                      id: klaviyoProfileId
+                      id: profile.id
                     }
                   }
                 }
@@ -195,13 +179,12 @@ Deno.serve(async (req) => {
         if (deleteResponse.status === 202 || deleteResponse.ok) {
           result.deleted = true;
           deletedCount++;
-          console.log(`Deletion job created for Klaviyo profile ${klaviyoProfileId} (user ${userId})`);
+          console.log(`Deletion job created for profile ${profile.id} (external_id: ${profile.attributes.external_id})`);
         } else {
           const errorText = await deleteResponse.text();
-          result.error = `Deletion job failed: ${deleteResponse.status} - ${errorText}`;
+          result.error = `Deletion failed: ${deleteResponse.status} - ${errorText}`;
           errorCount++;
         }
-
       } catch (err) {
         result.error = `Error: ${err instanceof Error ? err.message : 'Unknown error'}`;
         errorCount++;
@@ -210,16 +193,17 @@ Deno.serve(async (req) => {
       results.push(result);
 
       // Small delay to avoid rate limiting
-      await new Promise(resolve => setTimeout(resolve, 100));
+      await new Promise(resolve => setTimeout(resolve, 150));
     }
 
     return new Response(
       JSON.stringify({
         message: dryRun 
-          ? `DRY RUN: Found ${ghostUserIds.length} ghost profiles that would be deleted`
-          : `Cleanup completed: deleted ${deletedCount} profiles`,
+          ? `DRY RUN: Found ${ghostProfiles.length} ghost profiles that would be deleted`
+          : `Cleanup completed: ${deletedCount} deletion jobs created`,
         dryRun,
-        found: ghostUserIds.length,
+        totalProfiles: allProfiles.length,
+        found: ghostProfiles.length,
         deleted: deletedCount,
         errors: errorCount,
         profiles: results
