@@ -1,5 +1,6 @@
 project_id = "zkgvvuyubalbymhfxrex"
 
+# Core functions
 [functions.collect]
 verify_jwt = false
 
@@ -9,13 +10,34 @@ verify_jwt = false
 [functions.health]
 verify_jwt = false
 
-[functions.sync-klaviyo]
-verify_jwt = false
-
 [functions.process-events]
 verify_jwt = false
 
+[functions.background-processor]
+verify_jwt = false
+
+# Sync functions
+[functions.sync-klaviyo]
+verify_jwt = false
+
+[functions.sync-scheduler]
+verify_jwt = false
+
+[functions.sync-meta]
+verify_jwt = false
+
+# Webhooks
 [functions.webhooks-shopify]
+verify_jwt = false
+
+[functions.webhooks-klaviyo]
+verify_jwt = false
+
+# Utilities
+[functions.export-high-intent]
+verify_jwt = false
+
+[functions.value-metrics]
 verify_jwt = false
 
 [functions.gdpr-delete]
@@ -24,38 +46,5 @@ verify_jwt = false
 [functions.audit-log]
 verify_jwt = false
 
-[functions.sync-meta]
-verify_jwt = false
-
-[functions.sync-scheduler]
-verify_jwt = false
-
-[functions.background-processor]
-verify_jwt = false
-
-[functions.test-webhook]
-verify_jwt = false
-
-[functions.cleanup-klaviyo]
-verify_jwt = false
-
-[functions.webhooks-klaviyo]
-verify_jwt = false
-
 [functions.poll-klaviyo-events]
-verify_jwt = false
-
-[functions.seed-test-data]
-verify_jwt = false
-
-[functions.test-endpoints]
-verify_jwt = false
-
-[functions.export-high-intent]
-verify_jwt = false
-
-[functions.init-klaviyo-test]
-verify_jwt = false
-
-[functions.value-metrics]
 verify_jwt = false
