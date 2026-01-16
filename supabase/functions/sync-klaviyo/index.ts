@@ -1,14 +1,64 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { corsHeaders } from '../_shared/cors.ts';
 
+/**
+ * IdentitySync - Klaviyo Sync Function
+ * 
+ * Behavior Intelligence Layer - Only syncs HIGH-VALUE signals
+ * 
+ * ✅ What gets synced:
+ * - Profile properties with behavioral scores (sf_intent_score, sf_drop_off_stage, etc.)
+ * - High-value trigger events (SF High Intent Detected, SF Dropped From Checkout, etc.)
+ * 
+ * ❌ What gets BLOCKED:
+ * - Raw page views, product views, scroll events
+ * - Users without email (prevents ghost profiles)
+ * - Duplicate events
+ */
+
+// ===== HIGH-VALUE EVENTS THAT TRIGGER KLAVIYO TRACKING =====
+const HIGH_VALUE_EVENTS = new Set([
+  // Cart events (intent signals)
+  'Add to Cart',
+  'Product Added',
+  'Cart Viewed',
+  
+  // Checkout events (high intent)
+  'Begin Checkout',
+  'Checkout Started',
+  
+  // Purchase events
+  'Purchase',
+  'Order Completed',
+]);
+
+// ===== BLOCKED EVENTS (noise) =====
+const BLOCKED_EVENTS = new Set([
+  // Page events (aggregated instead)
+  'Page View',
+  'Session Start',
+  'Scroll Depth',
+  'Time on Page',
+  'Exit Intent',
+  
+  // Product views (aggregated into depth score)
+  'Product Viewed',
+  'View Item',
+  'View Category',
+  'Product Click',
+  'Search',
+  
+  // Form events
+  'Form Viewed',
+  'Form Submitted',
+]);
+
 interface KlaviyoProfile {
   type: 'profile';
   attributes: {
     email?: string;
     phone_number?: string;
     external_id?: string;
-    first_name?: string;
-    last_name?: string;
     properties?: Record<string, unknown>;
   };
 }
@@ -19,9 +69,7 @@ interface KlaviyoEvent {
     metric: {
       data: {
         type: 'metric';
-        attributes: {
-          name: string;
-        };
+        attributes: { name: string };
       };
     };
     profile: {
@@ -29,7 +77,6 @@ interface KlaviyoEvent {
         type: 'profile';
         attributes: {
           email?: string;
-          phone_number?: string;
           external_id?: string;
         };
       };
@@ -52,7 +99,6 @@ async function upsertKlaviyoProfile(apiKey: string, profile: KlaviyoProfile): Pr
   });
 
   if (response.status === 409) {
-    // Profile exists, try to update
     const existing = await response.json();
     const profileId = existing?.errors?.[0]?.meta?.duplicate_profile_id;
     
@@ -102,6 +148,85 @@ async function trackKlaviyoEvent(apiKey: string, event: KlaviyoEvent): Promise<{
   return { success: true };
 }
 
+/**
+ * Check if an event should be sent to Klaviyo
+ */
+function shouldSendEvent(eventName: string): boolean {
+  // Explicitly blocked events
+  if (BLOCKED_EVENTS.has(eventName)) {
+    return false;
+  }
+  // Only allow high-value events
+  return HIGH_VALUE_EVENTS.has(eventName);
+}
+
+/**
+ * Map event name to Klaviyo format with SF prefix
+ */
+function mapEventName(eventName: string): string {
+  const map: Record<string, string> = {
+    'Add to Cart': 'SF Added to Cart',
+    'Product Added': 'SF Added to Cart',
+    'Cart Viewed': 'SF Viewed Cart',
+    'Begin Checkout': 'SF Started Checkout',
+    'Checkout Started': 'SF Started Checkout',
+    'Purchase': 'SF Placed Order',
+    'Order Completed': 'SF Placed Order',
+  };
+  return map[eventName] || `SF ${eventName}`;
+}
+
+/**
+ * Build behavioral profile properties from computed traits
+ * These are the ONLY properties synced to Klaviyo
+ */
+function buildBehavioralProperties(user: {
+  id: string;
+  first_seen_at: string;
+  last_seen_at: string;
+  computed: Record<string, unknown>;
+  customer_ids?: string[];
+  anonymous_ids?: string[];
+  traits?: Record<string, unknown>;
+}): Record<string, unknown> {
+  const computed = user.computed || {};
+  
+  return {
+    // === IDENTIFICATION ===
+    sf_unified_user_id: user.id,
+    sf_first_seen_at: user.first_seen_at,
+    sf_last_seen_at: user.last_seen_at,
+    
+    // === CORE BEHAVIORAL SCORES ===
+    sf_intent_score: computed.intent_score ?? 0,
+    sf_frequency_score: computed.frequency_score ?? 10,
+    sf_depth_score: computed.depth_score ?? 0,
+    sf_recency_days: computed.recency_days ?? 0,
+    
+    // === BEHAVIORAL SIGNALS ===
+    sf_top_category: computed.top_category_30d ?? null,
+    sf_drop_off_stage: computed.drop_off_stage ?? 'visitor',
+    
+    // === ENGAGEMENT COUNTS ===
+    sf_viewed_products_7d: computed.unique_products_viewed ?? 0,
+    sf_categories_viewed: computed.unique_categories_viewed ?? 0,
+    sf_session_count_30d: computed.session_count_30d ?? 1,
+    
+    // === ABANDONMENT TIMESTAMPS (for flow triggers) ===
+    sf_cart_abandoned_at: computed.cart_abandoned_at ?? null,
+    sf_checkout_abandoned_at: computed.checkout_abandoned_at ?? null,
+    
+    // === REVENUE METRICS ===
+    sf_lifetime_value: computed.lifetime_value ?? 0,
+    sf_orders_count: computed.orders_count ?? 0,
+    
+    // === METADATA ===
+    sf_computed_at: computed.last_computed_at ?? null,
+    sf_customer_ids: user.customer_ids && user.customer_ids.length > 0 ? user.customer_ids.join(',') : null,
+    sf_anonymous_ids_count: user.anonymous_ids?.length ?? 0,
+  };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -145,6 +270,7 @@ Deno.serve(async (req) => {
     let successCount = 0;
     let failCount = 0;
     let skippedCount = 0;
+    let blockedCount = 0;
 
     for (const job of jobs) {
       // Mark as running
@@ -190,13 +316,13 @@ Deno.serve(async (req) => {
       if (job.job_type === 'profile_upsert' && job.unified_user) {
         const user = job.unified_user;
         
-        // ⛔ SKIP: Non sincronizzare profili senza email
+        // ⛔ SKIP: Non sincronizzare profili senza email (prevents ghost profiles)
         if (!user.primary_email) {
           await supabase
             .from('sync_jobs')
             .update({ 
               status: 'completed', 
-              last_error: 'Skipped - no email',
+              last_error: 'Skipped - no email (identity not resolved)',
               completed_at: new Date().toISOString()
             })
             .eq('id', job.id);
@@ -204,61 +330,13 @@ Deno.serve(async (req) => {
           continue;
         }
         
-        const computed = user.computed || {};
-        
-        // Build behavioral properties with sf_ prefix for Klaviyo
-        const behavioralProperties: Record<string, unknown> = {
-          // === IDENTIFICATION ===
-          sf_unified_user_id: user.id,
-          sf_first_seen_at: user.first_seen_at,
-          sf_last_seen_at: user.last_seen_at,
-          
-          // === CORE BEHAVIORAL SCORES ===
-          sf_intent_score: computed.intent_score ?? 0,
-          sf_frequency_score: computed.frequency_score ?? 10,
-          sf_depth_score: computed.depth_score ?? 0,
-          sf_recency_days: computed.recency_days ?? 0,
-          
-          // === BEHAVIORAL SIGNALS ===
-          sf_top_category_30d: computed.top_category_30d ?? null,
-          sf_drop_off_stage: computed.drop_off_stage ?? 'visitor',
-          
-          // === ENGAGEMENT COUNTS ===
-          sf_products_viewed_count: computed.unique_products_viewed ?? 0,
-          sf_categories_viewed_count: computed.unique_categories_viewed ?? 0,
-          sf_session_count_30d: computed.session_count_30d ?? 1,
-          
-          // === ABANDONMENT TIMESTAMPS (for flow triggers) ===
-          sf_cart_abandoned_at: computed.cart_abandoned_at ?? null,
-          sf_checkout_abandoned_at: computed.checkout_abandoned_at ?? null,
-          
-          // === REVENUE METRICS ===
-          sf_lifetime_value: computed.lifetime_value ?? 0,
-          sf_orders_count: computed.orders_count ?? 0,
-          
-          // === LAST COMPUTED TIMESTAMP ===
-          sf_computed_at: computed.last_computed_at ?? null,
-          
-          // === CUSTOMER IDs (for linking) ===
-          sf_customer_ids: user.customer_ids?.length > 0 ? user.customer_ids.join(',') : null,
-          sf_anonymous_ids_count: user.anonymous_ids?.length ?? 0,
-        };
-        
-        // Add any custom traits from the user
-        const userTraits = user.traits || {};
-        Object.keys(userTraits).forEach(key => {
-          // Prefix custom traits with sf_ if not already
-          const prefixedKey = key.startsWith('sf_') ? key : `sf_${key}`;
-          behavioralProperties[prefixedKey] = userTraits[key];
-        });
-        
         const profile: KlaviyoProfile = {
           type: 'profile',
           attributes: {
-            email: user.primary_email || undefined,
+            email: user.primary_email,
             phone_number: user.phone || undefined,
             external_id: user.id,
-            properties: behavioralProperties,
+            properties: buildBehavioralProperties(user),
           },
         };
         result = await upsertKlaviyoProfile(klaviyoApiKey, profile);
@@ -281,51 +359,30 @@ Deno.serve(async (req) => {
           continue;
         }
         
-        // Enhanced event name mapping for Klaviyo
-        const eventNameMap: Record<string, string> = {
-          // Page events
-          'Page View': 'SF Page View',
-          'Session Start': 'SF Session Start',
-          'Scroll Depth': 'SF Scroll Depth',
-          'Time on Page': 'SF Time on Page',
-          'Exit Intent': 'SF Exit Intent',
-          
-          // Product events
-          'Product Viewed': 'SF Viewed Product',
-          'View Item': 'SF Viewed Product',
-          'View Category': 'SF Viewed Category',
-          'Product Click': 'SF Product Click',
-          'Search': 'SF Search',
-          
-          // Cart events
-          'Add to Cart': 'SF Added to Cart',
-          'Remove from Cart': 'SF Removed from Cart',
-          'Update Cart': 'SF Updated Cart',
-          'Cart Viewed': 'SF Viewed Cart',
-          
-          // Checkout events
-          'Begin Checkout': 'SF Started Checkout',
-          'Checkout Customer': 'SF Checkout Customer',
-          
-          // Order events
-          'Purchase': 'SF Placed Order',
-          
-          // Form events
-          'Form Viewed': 'SF Form Viewed',
-          'Form Submitted': 'SF Form Submitted',
-          'Newsletter Intent': 'SF Newsletter Intent',
-        };
+        // ⛔ BLOCK: Non inviare eventi a basso valore (noise)
+        const eventName = event.event_name || event.event_type;
+        if (!shouldSendEvent(eventName)) {
+          await supabase
+            .from('sync_jobs')
+            .update({ 
+              status: 'completed', 
+              last_error: `Blocked - low-value event: ${eventName}`,
+              completed_at: new Date().toISOString()
+            })
+            .eq('id', job.id);
+          blockedCount++;
+          continue;
+        }
         
-        const eventKey = event.event_name || event.event_type;
-        const klaviyoEventName = eventNameMap[eventKey] || `SF ${eventKey}`;
+        const klaviyoEventName = mapEventName(eventName);
         
-        // Enrich event properties with behavioral context
+        // Enrich event with behavioral context
         const enrichedProperties = {
           ...(event.properties as Record<string, unknown>),
           sf_event_id: event.id,
           sf_session_id: event.session_id,
-          sf_anonymous_id: event.anonymous_id,
-          sf_event_source: event.source,
+          sf_intent_score: user.computed?.intent_score ?? 0,
+          sf_drop_off_stage: user.computed?.drop_off_stage ?? 'visitor',
         };
         
         const klaviyoEvent: KlaviyoEvent = {
@@ -334,17 +391,15 @@ Deno.serve(async (req) => {
             metric: {
               data: {
                 type: 'metric',
-                attributes: {
-                  name: klaviyoEventName,
-                },
+                attributes: { name: klaviyoEventName },
               },
             },
             profile: {
               data: {
                 type: 'profile',
                 attributes: {
-                  email: user?.primary_email || undefined,
-                  external_id: user?.id || event.anonymous_id,
+                  email: user.primary_email,
+                  external_id: user.id,
                 },
               },
             },
@@ -356,7 +411,6 @@ Deno.serve(async (req) => {
         result = await trackKlaviyoEvent(klaviyoApiKey, klaviyoEvent);
         
       } else {
-        // event_sync is no longer used - all events use event_track with event_id reference
         result = { success: false, error: 'Unknown job type or missing data' };
       }
 
@@ -379,7 +433,7 @@ Deno.serve(async (req) => {
         const newStatus = job.attempts >= 2 ? 'failed' : 'pending';
         const scheduledAt = job.attempts >= 2 
           ? null 
-          : new Date(Date.now() + Math.pow(2, job.attempts) * 60000).toISOString(); // Exponential backoff
+          : new Date(Date.now() + Math.pow(2, job.attempts) * 60000).toISOString();
         
         await supabase
           .from('sync_jobs')
@@ -403,11 +457,13 @@ Deno.serve(async (req) => {
 
     return new Response(
       JSON.stringify({ 
-        message: 'Sync completed',
+        message: 'Sync completed - Behavior Intelligence Mode',
         processed: jobs.length,
         success: successCount,
         failed: failCount,
-        skipped: skippedCount
+        skipped: skippedCount,
+        blocked: blockedCount,
+        note: 'Low-value events (page views, product views) are blocked. Only high-intent actions synced.',
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
