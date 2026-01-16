@@ -3,7 +3,7 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Copy, Check, Code, Loader2, CheckCircle2, XCircle, ExternalLink } from "lucide-react";
+import { Copy, Check, Code, Loader2, CheckCircle2, XCircle, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 
 interface TrackingSnippetProps {
@@ -16,7 +16,8 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   const [copied, setCopied] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [verificationResult, setVerificationResult] = useState<'success' | 'error' | null>(null);
-  const [domainToVerify, setDomainToVerify] = useState(currentWorkspace?.domain || '');
+  const [manualApiKey, setManualApiKey] = useState('');
+  const [showManualInput, setShowManualInput] = useState(false);
   
   // Try to get full API key from localStorage (stored when created)
   const [storedApiKey, setStoredApiKey] = useState<string>('');
@@ -27,18 +28,17 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
       if (stored) setStoredApiKey(stored);
     }
   }, [currentWorkspace?.id]);
-
-  useEffect(() => {
-    if (currentWorkspace?.domain) {
-      setDomainToVerify(currentWorkspace.domain);
-    }
-  }, [currentWorkspace?.domain]);
   
-  const apiKey = fullApiKey || storedApiKey || apiKeys[0]?.key_prefix || 'YOUR_API_KEY';
-  const hasFullKey = fullApiKey || storedApiKey || !apiKey.includes('...');
+  // Priority: manual input > prop > localStorage > show placeholder
+  const apiKey = manualApiKey || fullApiKey || storedApiKey || '';
+  const hasFullKey = !!apiKey && !apiKey.includes('...');
+  const displayKey = hasFullKey ? apiKey : (apiKeys[0]?.key_prefix || 'YOUR_API_KEY');
   
   const collectUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/collect`;
   const identifyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/identify`;
+
+  // Use the key for snippet display and verification
+  const snippetKey = hasFullKey ? apiKey : displayKey;
 
   const snippet = `<!-- SignalForge Tracking Snippet -->
 <script>
@@ -95,7 +95,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   // Auto-track page views
   w.sfTrack('Page View',{path:location.pathname});
   
-})(window,document,'script','sf','${apiKey}');
+})(window,document,'script','sf','${snippetKey}');
 </script>`;
 
   const handleCopy = async () => {
@@ -106,8 +106,11 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   };
 
   const handleVerifyInstallation = async () => {
-    if (!domainToVerify) {
-      toast.error("Please enter a domain to verify");
+    const keyToVerify = manualApiKey || apiKey;
+    
+    if (!keyToVerify || keyToVerify.includes('...') || keyToVerify === 'YOUR_API_KEY') {
+      toast.error("Please enter a valid full API key to verify");
+      setShowManualInput(true);
       return;
     }
 
@@ -115,29 +118,18 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     setVerificationResult(null);
 
     try {
-      // Clean up domain
-      let domain = domainToVerify.trim();
-      if (!domain.startsWith('http')) {
-        domain = 'https://' + domain;
-      }
-
-      // Try to fetch the page and check for SignalForge
-      const proxyUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/health`;
-      
-      // We'll check if we received any events from this domain in the last 5 minutes
-      // by looking at recent events
       const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/collect`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
+          'x-api-key': keyToVerify,
         },
         body: JSON.stringify({
           event: '_sf_verification_ping',
           properties: { verification: true },
           context: {
-            anonymous_id: 'verification_test',
-            page: { url: domain }
+            anonymous_id: 'verification_test_' + Date.now(),
+            page: { url: 'verification-test' }
           },
           timestamp: new Date().toISOString(),
         }),
@@ -148,6 +140,11 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         if (data.success) {
           setVerificationResult('success');
           toast.success("API key is working correctly!");
+          // Save the working key
+          if (currentWorkspace?.id) {
+            localStorage.setItem(`sf_api_key_${currentWorkspace.id}`, keyToVerify);
+            setStoredApiKey(keyToVerify);
+          }
         } else {
           setVerificationResult('error');
           toast.error("Verification failed: " + (data.error || 'Unknown error'));
@@ -181,8 +178,31 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         </div>
         
         {!hasFullKey && (
-          <div className="p-3 bg-warning/10 text-warning rounded-lg text-sm">
-            ⚠️ The snippet shows a partial API key. Create a new API key to get the full key integrated automatically.
+          <div className="p-3 bg-warning/10 text-warning rounded-lg text-sm space-y-2">
+            <p>⚠️ The snippet shows a partial API key. Either:</p>
+            <ul className="list-disc list-inside ml-2 text-xs">
+              <li>Create a new API key (recommended - it will be saved automatically)</li>
+              <li>Or enter your full API key below</li>
+            </ul>
+          </div>
+        )}
+
+        {/* Manual API Key Input */}
+        {(!hasFullKey || showManualInput) && (
+          <div className="flex gap-2 items-center">
+            <KeyRound className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+            <Input
+              placeholder="Paste your full API key (sf_pk_...)"
+              value={manualApiKey}
+              onChange={(e) => {
+                setManualApiKey(e.target.value);
+                if (currentWorkspace?.id && e.target.value.startsWith('sf_pk_')) {
+                  localStorage.setItem(`sf_api_key_${currentWorkspace.id}`, e.target.value);
+                  setStoredApiKey(e.target.value);
+                }
+              }}
+              className="flex-1 font-mono text-sm"
+            />
           </div>
         )}
         
@@ -197,31 +217,26 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
       <div className="space-y-4 pt-4 border-t border-border">
         <div className="flex items-center gap-2">
           <CheckCircle2 className="w-5 h-5 text-primary" />
-          <h3 className="font-semibold">Verify Installation</h3>
+          <h3 className="font-semibold">Verify API Key</h3>
         </div>
         
         <p className="text-sm text-muted-foreground">
           Test that your API key is working correctly by sending a test event.
         </p>
         
-        <div className="flex gap-2">
-          <Input
-            placeholder="yourdomain.com"
-            value={domainToVerify}
-            onChange={(e) => setDomainToVerify(e.target.value)}
-            className="flex-1"
-          />
-          <Button onClick={handleVerifyInstallation} disabled={verifying}>
-            {verifying ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Verifying...
-              </>
-            ) : (
-              'Verify'
-            )}
-          </Button>
-        </div>
+        <Button onClick={handleVerifyInstallation} disabled={verifying} className="w-full">
+          {verifying ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Verifying...
+            </>
+          ) : (
+            <>
+              <CheckCircle2 className="w-4 h-4 mr-2" />
+              Test API Key
+            </>
+          )}
+        </Button>
 
         {verificationResult && (
           <div className={`flex items-center gap-2 p-3 rounded-lg ${
@@ -251,7 +266,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
           <li>Copy the snippet above</li>
           <li>Add it to your website's <code className="bg-muted px-1 rounded">&lt;head&gt;</code> tag</li>
           <li>Page views are tracked automatically</li>
-          <li>Click "Verify" to test the connection</li>
+          <li>Click "Test API Key" to verify the connection</li>
         </ol>
 
         <p className="font-medium mt-4">Custom Events:</p>
