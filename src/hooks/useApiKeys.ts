@@ -113,8 +113,9 @@ export function useApiKeys() {
       
       if (error) throw error;
       
-      // Store the full API key in localStorage for snippet generation
-      localStorage.setItem(`sf_api_key_${currentWorkspace.id}`, rawKey);
+      // SECURITY: Only store the key prefix in localStorage (not the full key)
+      // Full keys should only be shown once when created, following industry best practices
+      localStorage.setItem(`sf_api_key_prefix_${currentWorkspace.id}`, keyPrefix);
       
       // Log audit event
       await logAuditEvent(currentWorkspace.id, 'create', data.id, {

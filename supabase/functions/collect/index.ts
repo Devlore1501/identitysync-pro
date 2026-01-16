@@ -409,7 +409,47 @@ Deno.serve(async (req) => {
     console.log('Event name:', payload.event);
     console.log('Anonymous ID:', payload.context?.anonymous_id || 'not provided');
     console.log('Session ID:', payload.context?.session_id || 'not provided');
-    console.log('Properties:', JSON.stringify(payload.properties || {}));
+
+    // SECURITY: Validate payload size limits to prevent DoS attacks
+    const propertiesSize = JSON.stringify(payload.properties || {}).length;
+    const contextSize = JSON.stringify(payload.context || {}).length;
+    
+    if (propertiesSize > 50000) { // 50KB limit for properties
+      console.log('ERROR: Properties payload too large:', propertiesSize);
+      return new Response(
+        JSON.stringify({ error: 'Properties payload too large (max 50KB)' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    if (contextSize > 20000) { // 20KB limit for context
+      console.log('ERROR: Context payload too large:', contextSize);
+      return new Response(
+        JSON.stringify({ error: 'Context payload too large (max 20KB)' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate nesting depth to prevent stack overflow
+    function getJsonDepth(obj: unknown, depth = 0): number {
+      if (depth > 10) return depth;
+      if (typeof obj !== 'object' || obj === null) return depth;
+      let maxChildDepth = depth;
+      for (const value of Object.values(obj)) {
+        maxChildDepth = Math.max(maxChildDepth, getJsonDepth(value, depth + 1));
+      }
+      return maxChildDepth;
+    }
+    
+    if (getJsonDepth(payload.properties) > 10) {
+      console.log('ERROR: Properties nesting too deep');
+      return new Response(
+        JSON.stringify({ error: 'Properties nesting too deep (max 10 levels)' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('Properties size:', propertiesSize, 'Context size:', contextSize);
 
     // Validate required fields
     if (!payload.event) {

@@ -63,6 +63,40 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Get workspace to check account_id for role verification
+    const { data: workspaceForRole } = await supabase
+      .from('workspaces')
+      .select('account_id')
+      .eq('id', workspaceId)
+      .single();
+
+    if (!workspaceForRole?.account_id) {
+      return new Response(
+        JSON.stringify({ error: 'Workspace not found' }),
+        { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // SECURITY: Check for admin or owner role - GDPR deletion requires elevated permissions
+    const { data: hasAdminRole } = await supabase.rpc('has_role', {
+      _user_id: userId,
+      _account_id: workspaceForRole.account_id,
+      _role: 'admin'
+    });
+
+    const { data: hasOwnerRole } = await supabase.rpc('has_role', {
+      _user_id: userId,
+      _account_id: workspaceForRole.account_id,
+      _role: 'owner'
+    });
+
+    if (!hasAdminRole && !hasOwnerRole) {
+      return new Response(
+        JSON.stringify({ error: 'GDPR deletion requires admin or owner role' }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Get profile details before deletion for audit log
     const { data: profile } = await supabase
       .from('users_unified')

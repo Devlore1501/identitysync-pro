@@ -64,6 +64,38 @@ Deno.serve(async (req) => {
     console.log('Phone:', payload.phone || 'not provided');
     console.log('Workspace:', workspaceId);
 
+    // SECURITY: Validate traits payload size to prevent DoS attacks
+    const traitsSize = JSON.stringify(payload.traits || {}).length;
+    
+    if (traitsSize > 10000) { // 10KB limit for traits
+      console.log('ERROR: Traits payload too large:', traitsSize);
+      return new Response(
+        JSON.stringify({ error: 'Traits payload too large (max 10KB)' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Validate nesting depth to prevent stack overflow
+    function getJsonDepth(obj: unknown, depth = 0): number {
+      if (depth > 10) return depth;
+      if (typeof obj !== 'object' || obj === null) return depth;
+      let maxChildDepth = depth;
+      for (const value of Object.values(obj)) {
+        maxChildDepth = Math.max(maxChildDepth, getJsonDepth(value, depth + 1));
+      }
+      return maxChildDepth;
+    }
+    
+    if (getJsonDepth(payload.traits) > 10) {
+      console.log('ERROR: Traits nesting too deep');
+      return new Response(
+        JSON.stringify({ error: 'Traits nesting too deep (max 10 levels)' }),
+        { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    console.log('Traits size:', traitsSize);
+
     // Need at least one identifier
     if (!payload.email && !payload.user_id && !payload.anonymous_id && !payload.phone) {
       console.log('ERROR: No identifier provided');
