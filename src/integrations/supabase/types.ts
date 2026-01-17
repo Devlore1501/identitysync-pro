@@ -759,6 +759,16 @@ export type Database = {
     }
     Functions: {
       decay_recency_scores: { Args: never; Returns: number }
+      get_account_info: {
+        Args: { p_account_id: string }
+        Returns: {
+          created_at: string
+          id: string
+          name: string
+          plan: string
+          updated_at: string
+        }[]
+      }
       get_user_account_id: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

@@ -19,10 +19,10 @@ export function useAccount() {
     queryFn: async (): Promise<Account | null> => {
       if (!profile?.account_id) return null;
 
+      // Use RPC function to get account info (works for all members, not just owners)
+      // This function returns non-sensitive data (excludes stripe_customer_id)
       const { data, error } = await supabase
-        .from('accounts')
-        .select('*')
-        .eq('id', profile.account_id)
+        .rpc('get_account_info', { p_account_id: profile.account_id })
         .single();
 
       if (error) {
@@ -30,7 +30,9 @@ export function useAccount() {
         throw error;
       }
 
-      return data;
+      // The RPC returns the account without stripe_customer_id
+      // Add null for stripe_customer_id to maintain interface compatibility
+      return data ? { ...data, stripe_customer_id: null } : null;
     },
     enabled: !!profile?.account_id,
   });
