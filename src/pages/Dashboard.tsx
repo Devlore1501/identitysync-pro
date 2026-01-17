@@ -4,12 +4,14 @@ import { BehavioralInsights } from "@/components/dashboard/BehavioralInsights";
 import { SegmentsWidget } from "@/components/dashboard/SegmentsWidget";
 import { HighIntentWidget } from "@/components/dashboard/HighIntentWidget";
 import { SyncStatusCompact } from "@/components/dashboard/SyncStatusCompact";
+import { PredictiveRegistry } from "@/components/dashboard/PredictiveRegistry";
+import { IdentityStitchingStatus } from "@/components/dashboard/IdentityStitchingStatus";
+import { ServerTrackingSnippet } from "@/components/dashboard/ServerTrackingSnippet";
 import { 
   Brain,
   RefreshCw,
   CheckCircle,
   AlertCircle,
-  Loader2
 } from "lucide-react";
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { useDestinations } from "@/hooks/useDestinations";
@@ -19,7 +21,6 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
 import { it } from "date-fns/locale";
-import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -28,29 +29,9 @@ const Dashboard = () => {
   const { data: health, isLoading, refetch } = useSystemHealth();
   const { destinations } = useDestinations();
   const { apiKeys } = useApiKeys();
-  const [isRecomputing, setIsRecomputing] = useState(false);
 
   const hasApiKey = apiKeys.length > 0;
   const klaviyoConnected = destinations.some(d => d.type === 'klaviyo' && d.enabled);
-
-  const handleRecomputeSignals = async () => {
-    setIsRecomputing(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('background-processor', {
-        body: { limit: 100, force_recompute: true }
-      });
-
-      if (error) throw error;
-
-      toast.success(`Segnali ricalcolati per ${data?.signalsRecomputed || 0} utenti`);
-      refetch();
-    } catch (err) {
-      console.error('Recompute error:', err);
-      toast.error('Errore nel ricalcolo dei segnali');
-    } finally {
-      setIsRecomputing(false);
-    }
-  };
 
   return (
     <DashboardLayout>
@@ -81,6 +62,12 @@ const Dashboard = () => {
         {/* MAIN VALUE METRIC - The ONE number that matters */}
         <ValueMetricHero />
 
+        {/* Identity Stitching + Predictive Registry */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <IdentityStitchingStatus />
+          <PredictiveRegistry />
+        </div>
+
         {/* Sync Status - Compact version */}
         <SyncStatusCompact />
 
@@ -94,6 +81,9 @@ const Dashboard = () => {
           <SegmentsWidget />
           <HighIntentWidget />
         </div>
+
+        {/* Server Tracking Snippet */}
+        <ServerTrackingSnippet />
 
         {/* Setup Checklist - Only show if incomplete */}
         {(!hasApiKey || !klaviyoConnected || !(health && health.eventsToday > 0)) && (

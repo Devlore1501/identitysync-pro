@@ -47,12 +47,12 @@ const PREDICTIVE_RULES: PredictiveRule[] = [
       const atc = Number(user.computed.atc_7d) || 0;
       const recency = Number(user.computed.recency_days) || 0;
       
-      return intent >= 60 && 
-             (dropOff === 'cart' || dropOff === 'cart_abandoned') && 
-             atc >= 1 &&
-             recency <= 3;
+      // Relaxed: intent >= 40 OR has cart activity
+      return (intent >= 40 || atc >= 1) && 
+             (dropOff === 'cart' || dropOff === 'cart_abandoned' || atc >= 1) && 
+             recency <= 7;
     },
-    confidence: 85,
+    confidence: 75,
     shouldTriggerFlow: true,
     flowName: 'SF High Intent Cart Recovery',
     expiresInHours: 72,
@@ -65,20 +65,26 @@ const PREDICTIVE_RULES: PredictiveRule[] = [
   {
     id: 'checkout_urgency',
     name: 'Checkout Abandonment - Urgent',
-    description: 'User abandoned checkout within last 24 hours',
+    description: 'User abandoned checkout within last 48 hours',
     condition: (user) => {
       const dropOff = user.computed.drop_off_stage;
       const checkoutAt = user.computed.checkout_abandoned_at;
       const orders = Number(user.computed.orders_count) || 0;
+      const intent = Number(user.computed.intent_score) || 0;
       
-      if (dropOff !== 'checkout' && dropOff !== 'checkout_abandoned') return false;
-      if (!checkoutAt) return false;
+      // Also trigger for high intent users even without explicit checkout
       if (orders > 0) return false; // Already purchased
       
-      const hoursSinceCheckout = (Date.now() - new Date(checkoutAt as string).getTime()) / (1000 * 60 * 60);
-      return hoursSinceCheckout <= 24;
+      if (dropOff === 'checkout' || dropOff === 'checkout_abandoned') {
+        if (!checkoutAt) return true; // Has checkout stage but no timestamp
+        const hoursSinceCheckout = (Date.now() - new Date(checkoutAt as string).getTime()) / (1000 * 60 * 60);
+        return hoursSinceCheckout <= 48;
+      }
+      
+      // High intent fallback
+      return intent >= 70;
     },
-    confidence: 92,
+    confidence: 85,
     shouldTriggerFlow: true,
     flowName: 'SF Checkout Abandonment Urgent',
     expiresInHours: 48,
@@ -90,28 +96,26 @@ const PREDICTIVE_RULES: PredictiveRule[] = [
   {
     id: 'browse_warming',
     name: 'Browse Abandoner - Warming Up',
-    description: 'User showing increased engagement across multiple sessions',
+    description: 'User showing increased engagement across sessions',
     condition: (user) => {
-      const sessions = Number(user.computed.session_count_30d) || 0;
-      const products = Number(user.computed.unique_products_viewed) || 0;
+      const sessions = Number(user.computed.session_count_30d) || 1;
+      const products = Number(user.computed.unique_products_viewed) || Number(user.computed.product_views_7d) || 0;
       const intent = Number(user.computed.intent_score) || 0;
       const recency = Number(user.computed.recency_days) || 0;
       const orders = Number(user.computed.orders_count) || 0;
       
-      return sessions >= 2 &&
-             products >= 3 &&
-             intent >= 30 &&
-             intent < 60 &&
-             recency <= 7 &&
+      // Relaxed: any engagement signals
+      return (products >= 2 || intent >= 20) &&
+             recency <= 14 &&
              orders === 0;
     },
-    confidence: 65,
+    confidence: 60,
     shouldTriggerFlow: true,
     flowName: 'SF Browse Warming Nurture',
     expiresInHours: 168, // 7 days
     payload: (user) => ({
       session_count: user.computed.session_count_30d,
-      products_viewed: user.computed.unique_products_viewed,
+      products_viewed: user.computed.unique_products_viewed || user.computed.product_views_7d,
       top_category: user.computed.top_category
     })
   },
