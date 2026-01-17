@@ -76,26 +76,39 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Parse query params
+    // Parse query params first
     const url = new URL(req.url);
-    const days = parseInt(url.searchParams.get('days') || '7');
-    const workspaceId = url.searchParams.get('workspace_id');
+    let days = parseInt(url.searchParams.get('days') || '7');
+    let workspaceId: string | null = url.searchParams.get('workspace_id');
+
+    // Also try reading from body (for POST requests from frontend)
+    if (req.method === 'POST') {
+      try {
+        const body = await req.json();
+        if (body.workspace_id) {
+          workspaceId = body.workspace_id;
+        }
+        if (body.days) {
+          days = parseInt(body.days);
+        }
+      } catch {
+        // Body parsing failed, continue with query params
+      }
+    }
 
     const periodEnd = new Date();
     const periodStart = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-    console.log(`[VALUE-METRICS] Calculating metrics for last ${days} days`);
+    console.log(`[VALUE-METRICS] Calculating metrics for workspace ${workspaceId || 'ALL'}, last ${days} days`);
 
-    // Build base query filter
-    const baseFilter = workspaceId 
-      ? { workspace_id: workspaceId }
-      : {};
+    // Checkout event types to match (Shopify sends begin_checkout)
+    const checkoutEventTypes = ['checkout', 'begin_checkout', 'Checkout Started'];
 
     // 1. Count checkout_started events
     let checkoutQuery = supabase
       .from('events')
       .select('id', { count: 'exact', head: true })
-      .eq('event_type', 'checkout')
+      .in('event_type', checkoutEventTypes)
       .gte('event_time', periodStart.toISOString())
       .lte('event_time', periodEnd.toISOString());
     
@@ -109,7 +122,7 @@ Deno.serve(async (req) => {
     let anonCheckoutQuery = supabase
       .from('events')
       .select('id', { count: 'exact', head: true })
-      .eq('event_type', 'checkout')
+      .in('event_type', checkoutEventTypes)
       .is('unified_user_id', null)
       .gte('event_time', periodStart.toISOString())
       .lte('event_time', periodEnd.toISOString());
