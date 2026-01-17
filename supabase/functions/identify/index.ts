@@ -112,7 +112,8 @@ Deno.serve(async (req) => {
     // Find or create unified user
     let unifiedUserId: string | null = null;
     let isNewUser = false;
-    let previousAnonymousIds: string[] = [];
+    let identityMerged = false;
+    let mergeResult: Record<string, unknown> | null = null;
 
     // Priority: email > user_id > phone > anonymous_id
     const identifiersToCheck = [
@@ -122,25 +123,98 @@ Deno.serve(async (req) => {
       { type: 'anonymous_id', value: payload.anonymous_id },
     ].filter(i => i.value);
 
-    // Try to find existing identity
-    for (const identifier of identifiersToCheck) {
-      const { data: existingIdentity } = await supabase
-        .from('identities')
-        .select('unified_user_id')
-        .eq('workspace_id', workspaceId)
-        .eq('identity_type', identifier.type)
-        .eq('identity_value', identifier.value)
-        .single();
+    // === STEP 1: Find existing user by any identifier ===
+    let foundByAnonymous = false;
+    let foundByEmail = false;
+    let anonymousUser: { id: string; primary_email: string | null } | null = null;
+    let emailUser: { id: string } | null = null;
 
-      if (existingIdentity) {
-        unifiedUserId = existingIdentity.unified_user_id;
-        break;
+    // Check anonymous_id first
+    if (payload.anonymous_id) {
+      const { data: anonResult } = await supabase
+        .from('users_unified')
+        .select('id, primary_email')
+        .eq('workspace_id', workspaceId)
+        .contains('anonymous_ids', [payload.anonymous_id])
+        .single();
+      
+      if (anonResult) {
+        anonymousUser = anonResult;
+        foundByAnonymous = true;
+        if (!anonResult.primary_email) {
+          console.log('Found anonymous user without email:', anonResult.id);
+        }
       }
     }
 
-    // Create new unified user if not found
+    // Check email
+    if (payload.email) {
+      const { data: emailResult } = await supabase
+        .from('users_unified')
+        .select('id')
+        .eq('workspace_id', workspaceId)
+        .or(`primary_email.eq.${payload.email},emails.cs.{${payload.email}}`)
+        .single();
+      
+      if (emailResult) {
+        emailUser = emailResult;
+        foundByEmail = true;
+        console.log('Found user by email:', emailResult.id);
+      }
+    }
+
+    // === STEP 2: Identity Stitching Logic ===
+    if (foundByAnonymous && foundByEmail && anonymousUser && emailUser && anonymousUser.id !== emailUser.id) {
+      // MERGE CASE: Anonymous user exists, email user exists, they are different
+      console.log('IDENTITY STITCHING: Merging anonymous user into email user');
+      console.log('Anonymous user:', anonymousUser.id);
+      console.log('Email user:', emailUser.id);
+      
+      const { data: mergeData, error: mergeError } = await supabase.rpc('merge_anonymous_to_identified', {
+        p_workspace_id: workspaceId,
+        p_anonymous_id: payload.anonymous_id,
+        p_identified_user_id: emailUser.id
+      });
+      
+      if (mergeError) {
+        console.error('Merge error:', mergeError);
+      } else if (mergeData?.merged) {
+        unifiedUserId = emailUser.id;
+        identityMerged = true;
+        mergeResult = mergeData;
+        console.log('Merge successful:', mergeData);
+      }
+    } else if (foundByAnonymous && !anonymousUser?.primary_email && payload.email) {
+      // UPDATE CASE: Anonymous user exists without email, we have email now
+      console.log('IDENTITY STITCHING: Updating anonymous user with email');
+      unifiedUserId = anonymousUser!.id;
+      
+      await supabase
+        .from('users_unified')
+        .update({
+          primary_email: payload.email,
+          emails: [payload.email],
+          customer_ids: payload.user_id ? [payload.user_id] : [],
+          phone: payload.phone || null,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', unifiedUserId);
+      
+      identityMerged = true;
+      console.log('Anonymous user updated with email');
+    } else if (foundByEmail && emailUser) {
+      // EXISTING EMAIL USER: Just update with new identifiers
+      unifiedUserId = emailUser.id;
+    } else if (foundByAnonymous && anonymousUser) {
+      // EXISTING ANONYMOUS USER: Just update with new identifiers  
+      unifiedUserId = anonymousUser.id;
+    }
+
+    // === STEP 3: Create new user if not found ===
     if (!unifiedUserId) {
       isNewUser = true;
+      console.log('Creating new unified user');
+      
       const { data: newUser, error: createError } = await supabase
         .from('users_unified')
         .insert({
@@ -151,6 +225,13 @@ Deno.serve(async (req) => {
           customer_ids: payload.user_id ? [payload.user_id] : [],
           anonymous_ids: payload.anonymous_id ? [payload.anonymous_id] : [],
           traits: payload.traits || {},
+          computed: {
+            intent_score: 0,
+            frequency_score: 10,
+            depth_score: 0,
+            drop_off_stage: 'browsing',
+            identified_via: 'identify_api'
+          }
         })
         .select('id')
         .single();
@@ -164,7 +245,8 @@ Deno.serve(async (req) => {
       }
 
       unifiedUserId = newUser.id;
-    } else {
+      console.log('Created new user:', unifiedUserId);
+    } else if (!isNewUser && !identityMerged) {
       // Update existing user with new identifiers and traits
       const { data: existingUser } = await supabase
         .from('users_unified')
@@ -173,8 +255,6 @@ Deno.serve(async (req) => {
         .single();
 
       if (existingUser) {
-        previousAnonymousIds = existingUser.anonymous_ids || [];
-        
         const updates: Record<string, unknown> = {
           last_seen_at: new Date().toISOString(),
         };
@@ -355,11 +435,15 @@ Deno.serve(async (req) => {
         success: true,
         unified_user_id: unifiedUserId,
         is_new_user: isNewUser,
+        identity_merged: identityMerged,
+        merge_result: mergeResult,
         events_linked: eventsLinked,
         sync_jobs_created: syncJobsCreated,
-        message: eventsLinked > 0 
-          ? `Identity linked successfully. ${eventsLinked} past events linked to this user.`
-          : 'Identity linked successfully'
+        message: identityMerged 
+          ? `Identity stitched successfully. Anonymous user merged with identified profile.`
+          : eventsLinked > 0 
+            ? `Identity linked successfully. ${eventsLinked} past events linked to this user.`
+            : 'Identity linked successfully'
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );

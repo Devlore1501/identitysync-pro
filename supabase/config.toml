@@ -16,6 +16,12 @@ verify_jwt = false
 [functions.background-processor]
 verify_jwt = false
 
+[functions.server-track]
+verify_jwt = false
+
+[functions.predictive-engine]
+verify_jwt = false
+
 # Sync functions
 [functions.sync-klaviyo]
 verify_jwt = false
