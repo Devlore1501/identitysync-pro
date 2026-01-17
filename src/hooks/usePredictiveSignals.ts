@@ -66,7 +66,7 @@ export function usePredictiveSignalStats() {
 
       const { data, error } = await supabase
         .from('predictive_signals')
-        .select('signal_type, confidence, should_trigger_flow, flow_triggered_at, last_synced_at')
+        .select('signal_type, confidence, should_trigger_flow, flow_triggered_at, synced_to')
         .eq('workspace_id', currentWorkspace.id);
 
       if (error) throw error;
@@ -84,7 +84,9 @@ export function usePredictiveSignalStats() {
         if (signal.should_trigger_flow && !signal.flow_triggered_at) {
           pendingFlows++;
         }
-        if (signal.last_synced_at) {
+        // Conta come sincronizzato se synced_to ha almeno una chiave con valore non null
+        const syncedTo = signal.synced_to as Record<string, string | null>;
+        if (syncedTo && Object.values(syncedTo).some(v => v !== null)) {
           synced++;
         }
       }
