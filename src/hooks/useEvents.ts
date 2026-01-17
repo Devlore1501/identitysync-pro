@@ -20,15 +20,19 @@ interface UseEventsOptions {
   page?: number;
   status?: 'pending' | 'processed' | 'failed' | 'synced';
   eventType?: string;
+  eventTypes?: string[];
+  source?: string;
   search?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
 }
 
 export function useEvents(options: UseEventsOptions = {}) {
   const { currentWorkspace } = useWorkspace();
-  const { limit = 50, page = 0, status, eventType, search } = options;
+  const { limit = 50, page = 0, status, eventType, eventTypes, source, search, dateFrom, dateTo } = options;
 
   return useQuery({
-    queryKey: ['events', currentWorkspace?.id, limit, page, status, eventType, search],
+    queryKey: ['events', currentWorkspace?.id, limit, page, status, eventType, eventTypes, source, search, dateFrom?.toISOString(), dateTo?.toISOString()],
     queryFn: async (): Promise<Event[]> => {
       if (!currentWorkspace?.id) return [];
 
@@ -45,8 +49,19 @@ export function useEvents(options: UseEventsOptions = {}) {
       if (eventType) {
         query = query.eq('event_type', eventType);
       }
+      if (eventTypes && eventTypes.length > 0) {
+        query = query.in('event_type', eventTypes);
+      }
+      if (source) {
+        query = query.eq('source', source);
+      }
+      if (dateFrom) {
+        query = query.gte('event_time', dateFrom.toISOString());
+      }
+      if (dateTo) {
+        query = query.lte('event_time', dateTo.toISOString());
+      }
       if (search && search.trim()) {
-        // Search in event_name, event_type, or id
         query = query.or(`event_name.ilike.%${search}%,event_type.ilike.%${search}%,id.ilike.%${search}%`);
       }
 
