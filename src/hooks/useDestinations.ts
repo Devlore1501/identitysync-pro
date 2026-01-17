@@ -224,3 +224,67 @@ export function useSyncStats() {
     refetchInterval: 30000,
   });
 }
+
+interface DestinationSyncStats {
+  completed: number;
+  pending: number;
+  failed: number;
+  successRate: number;
+}
+
+export function useSyncStatsByDestination() {
+  const { currentWorkspace } = useWorkspace();
+
+  return useQuery({
+    queryKey: ['sync-stats-by-destination', currentWorkspace?.id],
+    queryFn: async (): Promise<Record<string, DestinationSyncStats>> => {
+      if (!currentWorkspace?.id) return {};
+
+      const startOfWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data, error } = await supabase
+        .from('sync_jobs')
+        .select('destination_id, status')
+        .eq('workspace_id', currentWorkspace.id)
+        .gte('created_at', startOfWeek);
+
+      if (error) throw error;
+
+      const jobs = data || [];
+      const statsByDestination: Record<string, DestinationSyncStats> = {};
+
+      // Group by destination_id
+      jobs.forEach(job => {
+        if (!statsByDestination[job.destination_id]) {
+          statsByDestination[job.destination_id] = {
+            completed: 0,
+            pending: 0,
+            failed: 0,
+            successRate: 100,
+          };
+        }
+        
+        const stats = statsByDestination[job.destination_id];
+        if (job.status === 'completed') {
+          stats.completed++;
+        } else if (job.status === 'failed') {
+          stats.failed++;
+        } else if (job.status === 'pending' || job.status === 'running') {
+          stats.pending++;
+        }
+      });
+
+      // Calculate success rates
+      Object.values(statsByDestination).forEach(stats => {
+        const totalFinished = stats.completed + stats.failed;
+        stats.successRate = totalFinished > 0 
+          ? Math.round((stats.completed / totalFinished) * 100) 
+          : 100;
+      });
+
+      return statsByDestination;
+    },
+    enabled: !!currentWorkspace?.id,
+    refetchInterval: 30000,
+  });
+}
