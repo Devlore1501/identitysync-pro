@@ -706,6 +706,80 @@ export type Database = {
           },
         ]
       }
+      workspace_health: {
+        Row: {
+          alert_no_ecommerce: boolean | null
+          alert_no_events_24h: boolean | null
+          alert_tracking_broken: boolean | null
+          cart_events_count: number | null
+          checked_at: string | null
+          checkout_events_count: number | null
+          created_at: string | null
+          events_today: number | null
+          events_week: number | null
+          has_cart_events: boolean | null
+          has_checkout_events: boolean | null
+          has_order_events: boolean | null
+          has_product_events: boolean | null
+          id: string
+          last_event_at: string | null
+          order_events_count: number | null
+          product_events_count: number | null
+          updated_at: string | null
+          workspace_id: string
+        }
+        Insert: {
+          alert_no_ecommerce?: boolean | null
+          alert_no_events_24h?: boolean | null
+          alert_tracking_broken?: boolean | null
+          cart_events_count?: number | null
+          checked_at?: string | null
+          checkout_events_count?: number | null
+          created_at?: string | null
+          events_today?: number | null
+          events_week?: number | null
+          has_cart_events?: boolean | null
+          has_checkout_events?: boolean | null
+          has_order_events?: boolean | null
+          has_product_events?: boolean | null
+          id?: string
+          last_event_at?: string | null
+          order_events_count?: number | null
+          product_events_count?: number | null
+          updated_at?: string | null
+          workspace_id: string
+        }
+        Update: {
+          alert_no_ecommerce?: boolean | null
+          alert_no_events_24h?: boolean | null
+          alert_tracking_broken?: boolean | null
+          cart_events_count?: number | null
+          checked_at?: string | null
+          checkout_events_count?: number | null
+          created_at?: string | null
+          events_today?: number | null
+          events_week?: number | null
+          has_cart_events?: boolean | null
+          has_checkout_events?: boolean | null
+          has_order_events?: boolean | null
+          has_product_events?: boolean | null
+          id?: string
+          last_event_at?: string | null
+          order_events_count?: number | null
+          product_events_count?: number | null
+          updated_at?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_health_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: true
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspaces: {
         Row: {
           account_id: string
