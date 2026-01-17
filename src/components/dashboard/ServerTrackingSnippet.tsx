@@ -16,6 +16,7 @@ import {
   Info
 } from 'lucide-react';
 import { useApiKeys } from '@/hooks/useApiKeys';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
 import { toast } from 'sonner';
 
 interface Step {
@@ -30,9 +31,11 @@ export function ServerTrackingSnippet() {
   const [copied, setCopied] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('steps');
   const { apiKeys } = useApiKeys();
+  const { currentWorkspace } = useWorkspace();
   
   const apiKey = apiKeys?.[0]?.key_prefix ? `${apiKeys[0].key_prefix}...` : 'YOUR_API_KEY';
   const projectId = 'zkgvvuyubalbymhfxrex';
+  const workspaceId = currentWorkspace?.id || 'YOUR_WORKSPACE_ID';
 
   // Simulated step status - in production, check via API
   const steps: Step[] = [
@@ -83,19 +86,20 @@ export function ServerTrackingSnippet() {
   // Invia identity bridge se abbiamo entrambi
   if(sfAid && email) {
     var data = JSON.stringify({
+      workspace_id: '${workspaceId}',
       anonymous_id: sfAid,
       email: email,
-      user_id: customerId ? String(customerId) : null
+      customer_id: customerId ? String(customerId) : null
     });
     
     // sendBeacon per affidabilità (funziona anche se la pagina si chiude)
     if(navigator.sendBeacon) {
       navigator.sendBeacon(
-        'https://${projectId}.supabase.co/functions/v1/identify',
+        'https://${projectId}.supabase.co/functions/v1/identity-bridge',
         new Blob([data], {type: 'application/json'})
       );
     } else {
-      fetch('https://${projectId}.supabase.co/functions/v1/identify', {
+      fetch('https://${projectId}.supabase.co/functions/v1/identity-bridge', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: data,
