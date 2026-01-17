@@ -7,7 +7,20 @@ interface IdentifyPayload {
   user_id?: string; // external customer ID
   email?: string;
   phone?: string;
-  traits?: Record<string, unknown>;
+  traits?: Record<string, unknown> & {
+    ad_ids?: {
+      gclid?: string;
+      gbraid?: string;
+      wbraid?: string;
+      fbclid?: string;
+      fbp?: string;
+      fbc?: string;
+    };
+    capture_source?: string;
+    utm_source?: string;
+    utm_medium?: string;
+    utm_campaign?: string;
+  };
 }
 
 Deno.serve(async (req) => {
@@ -210,6 +223,20 @@ Deno.serve(async (req) => {
       unifiedUserId = anonymousUser.id;
     }
 
+    // === Extract ad_ids and capture_source from traits ===
+    const adIds = (payload.traits?.ad_ids || {}) as Record<string, string>;
+    const captureSource = (payload.traits?.capture_source || 'identify_api') as string;
+    
+    // Clean traits (remove ad_ids which go in separate column)
+    const cleanTraits = { ...payload.traits };
+    if (cleanTraits) {
+      delete cleanTraits.ad_ids;
+      delete cleanTraits.capture_source;
+    }
+    
+    console.log('Capture source:', captureSource);
+    console.log('Ad IDs:', JSON.stringify(adIds));
+
     // === STEP 3: Create new user if not found ===
     if (!unifiedUserId) {
       isNewUser = true;
@@ -224,13 +251,14 @@ Deno.serve(async (req) => {
           phone: payload.phone || null,
           customer_ids: payload.user_id ? [payload.user_id] : [],
           anonymous_ids: payload.anonymous_id ? [payload.anonymous_id] : [],
-          traits: payload.traits || {},
+          traits: cleanTraits || {},
+          ad_ids: adIds,
           computed: {
             intent_score: 0,
             frequency_score: 10,
             depth_score: 0,
             drop_off_stage: 'browsing',
-            identified_via: 'identify_api'
+            identified_via: captureSource
           }
         })
         .select('id')
@@ -278,13 +306,18 @@ Deno.serve(async (req) => {
         }
 
         // Merge traits
-        if (payload.traits) {
-          updates.traits = { ...existingUser.traits, ...payload.traits };
+        if (cleanTraits) {
+          updates.traits = { ...(existingUser.traits as Record<string, unknown>), ...cleanTraits };
         }
 
         // Update phone
         if (payload.phone && !existingUser.phone) {
           updates.phone = payload.phone;
+        }
+        
+        // Merge ad_ids
+        if (Object.keys(adIds).some(k => adIds[k])) {
+          updates.ad_ids = { ...(existingUser.ad_ids as Record<string, string> || {}), ...adIds };
         }
 
         await supabase
@@ -294,13 +327,14 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Create identity records for all provided identifiers
+    // Create identity records for all provided identifiers with capture_source
     const identityInserts = identifiersToCheck.map(({ type, value }) => ({
       workspace_id: workspaceId,
       unified_user_id: unifiedUserId,
       identity_type: type,
       identity_value: value,
       source: 'api',
+      capture_source: captureSource,
     }));
 
     // Upsert identities (ignore conflicts)
