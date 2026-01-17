@@ -207,6 +207,7 @@ export type Database = {
           last_sync_at: string | null
           name: string
           property_mapping: Json
+          send_events_to_klaviyo: boolean | null
           type: Database["public"]["Enums"]["destination_type"]
           updated_at: string
           workspace_id: string
@@ -221,6 +222,7 @@ export type Database = {
           last_sync_at?: string | null
           name: string
           property_mapping?: Json
+          send_events_to_klaviyo?: boolean | null
           type: Database["public"]["Enums"]["destination_type"]
           updated_at?: string
           workspace_id: string
@@ -235,6 +237,7 @@ export type Database = {
           last_sync_at?: string | null
           name?: string
           property_mapping?: Json
+          send_events_to_klaviyo?: boolean | null
           type?: Database["public"]["Enums"]["destination_type"]
           updated_at?: string
           workspace_id?: string
@@ -256,6 +259,7 @@ export type Database = {
           context: Json
           created_at: string
           dedupe_key: string | null
+          dupe_count: number | null
           event_name: string
           event_time: string
           event_type: string
@@ -275,6 +279,7 @@ export type Database = {
           context?: Json
           created_at?: string
           dedupe_key?: string | null
+          dupe_count?: number | null
           event_name: string
           event_time?: string
           event_type: string
@@ -294,6 +299,7 @@ export type Database = {
           context?: Json
           created_at?: string
           dedupe_key?: string | null
+          dupe_count?: number | null
           event_name?: string
           event_time?: string
           event_type?: string
@@ -833,6 +839,14 @@ export type Database = {
     }
     Functions: {
       decay_recency_scores: { Args: never; Returns: number }
+      detect_abandonments: {
+        Args: { p_workspace_id?: string }
+        Returns: {
+          cart_abandoned: number
+          checkout_abandoned: number
+          users_updated: number
+        }[]
+      }
       get_account_info: {
         Args: { p_account_id: string }
         Returns: {

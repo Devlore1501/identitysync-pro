@@ -60,3 +60,6 @@ verify_jwt = false
 
 [functions.backfill-computed]
 verify_jwt = false
+
+[functions.abandonment-detector]
+verify_jwt = false
