@@ -220,8 +220,12 @@ Deno.serve(async (req) => {
     // Calculate derived metrics
     const identifiedCheckouts = (checkoutStartedTotal || 0) - (anonymousCheckouts || 0);
     const recoveredUsers = profilesReadyForFlow || 0;
-    const recoveryRatePercent = checkoutStartedTotal 
-      ? Math.round((recoveredUsers / checkoutStartedTotal) * 100) 
+    
+    // Recovery rate: profili con email / profili totali con checkout activity
+    // Cap a 100% per evitare valori impossibili
+    const totalCheckoutProfiles = (checkoutAbandonedProfiles || 0) + (profilesReadyForFlow || 0);
+    const recoveryRatePercent = totalCheckoutProfiles > 0
+      ? Math.min(100, Math.round((recoveredUsers / totalCheckoutProfiles) * 100))
       : 0;
 
     // ===== EXTENDED FUNNEL QUERIES =====
