@@ -14,11 +14,17 @@ import {
   TrendingUp,
   CheckCircle2,
   Clock,
-  Zap
+  Zap,
+  Send,
+  ArrowUpRight
 } from 'lucide-react';
 import { usePredictiveSignalStats, useRunPredictiveEngine } from '@/hooks/usePredictiveSignals';
+import { useWorkspace } from '@/contexts/WorkspaceContext';
+import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { it } from 'date-fns/locale';
+import { toast } from 'sonner';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const SIGNAL_CONFIG: Record<string, {
   icon: React.ComponentType<{ className?: string }>;
@@ -64,10 +70,43 @@ const SIGNAL_CONFIG: Record<string, {
   },
 };
 
+function useSyncToKlaviyo() {
+  const { currentWorkspace } = useWorkspace();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      if (!currentWorkspace?.id) throw new Error('No workspace selected');
+
+      const { data, error } = await supabase.functions.invoke('sync-klaviyo', {
+        body: { workspace_id: currentWorkspace.id }
+      });
+
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['predictive-signals'] });
+      queryClient.invalidateQueries({ queryKey: ['predictive-signal-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['sync-intelligence'] });
+      
+      const synced = data?.profiles_updated || 0;
+      const flowsTriggered = data?.flows_triggered || 0;
+      toast.success(`Sincronizzati ${synced} profili, ${flowsTriggered} flow attivati`);
+    },
+    onError: (error) => {
+      console.error('Sync error:', error);
+      toast.error('Errore durante sincronizzazione Klaviyo');
+    }
+  });
+}
+
 export function PredictiveRegistry() {
   const { data: stats, isLoading, dataUpdatedAt } = usePredictiveSignalStats();
   const runEngine = useRunPredictiveEngine();
+  const syncKlaviyo = useSyncToKlaviyo();
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -75,6 +114,15 @@ export function PredictiveRegistry() {
       await runEngine.mutateAsync();
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setIsSyncing(true);
+    try {
+      await syncKlaviyo.mutateAsync();
+    } finally {
+      setIsSyncing(false);
     }
   };
 
@@ -93,6 +141,7 @@ export function PredictiveRegistry() {
 
   const signalTypes = Object.entries(stats?.by_type || {}).sort((a, b) => b[1] - a[1]);
   const lastUpdated = dataUpdatedAt ? formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true, locale: it }) : null;
+  const pendingSync = (stats?.total || 0) - (stats?.synced || 0);
 
   return (
     <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
@@ -102,19 +151,36 @@ export function PredictiveRegistry() {
             <Sparkles className="w-4 h-4 md:w-5 md:h-5 text-primary" />
             <CardTitle className="text-sm md:text-base font-semibold">Registro Predittivo</CardTitle>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={handleRefresh}
-            disabled={isRefreshing || runEngine.isPending}
-            className="h-7 md:h-8 text-xs md:text-sm"
-          >
-            <RefreshCw className={`w-3 h-3 md:w-4 md:h-4 mr-1 ${isRefreshing || runEngine.isPending ? 'animate-spin' : ''}`} />
-            Ricalcola
-          </Button>
+          <div className="flex items-center gap-1.5">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleRefresh}
+              disabled={isRefreshing || runEngine.isPending}
+              className="h-7 md:h-8 text-xs"
+            >
+              <RefreshCw className={`w-3 h-3 md:w-4 md:h-4 mr-1 ${isRefreshing || runEngine.isPending ? 'animate-spin' : ''}`} />
+              Ricalcola
+            </Button>
+            <Button 
+              variant="default" 
+              size="sm" 
+              onClick={handleSync}
+              disabled={isSyncing || syncKlaviyo.isPending || pendingSync === 0}
+              className="h-7 md:h-8 text-xs"
+            >
+              <Send className={`w-3 h-3 md:w-4 md:h-4 mr-1 ${isSyncing || syncKlaviyo.isPending ? 'animate-pulse' : ''}`} />
+              Sincronizza
+              {pendingSync > 0 && (
+                <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px]">
+                  {pendingSync}
+                </Badge>
+              )}
+            </Button>
+          </div>
         </div>
         <CardDescription className="text-xs">
-          Segnali comportamentali che anticipano le azioni degli utenti
+          Segnali comportamentali pronti per flow Klaviyo
         </CardDescription>
       </CardHeader>
       
@@ -126,16 +192,21 @@ export function PredictiveRegistry() {
             <div className="text-[10px] md:text-xs text-muted-foreground">Segnali</div>
           </div>
           <div className="text-center p-2 md:p-3 rounded-lg bg-green-500/10">
-            <div className="text-lg md:text-2xl font-bold text-green-600">{stats?.synced || 0}</div>
-            <div className="text-[10px] md:text-xs text-muted-foreground">Sync</div>
+            <div className="flex items-center justify-center gap-1">
+              <div className="text-lg md:text-2xl font-bold text-green-600">{stats?.synced || 0}</div>
+              {stats?.synced && stats.synced > 0 && (
+                <ArrowUpRight className="w-3 h-3 text-green-600" />
+              )}
+            </div>
+            <div className="text-[10px] md:text-xs text-muted-foreground">Sincronizzati</div>
           </div>
           <div className="text-center p-2 md:p-3 rounded-lg bg-orange-500/10">
             <div className="text-lg md:text-2xl font-bold text-orange-600">{stats?.pending_flows || 0}</div>
-            <div className="text-[10px] md:text-xs text-muted-foreground">Flow</div>
+            <div className="text-[10px] md:text-xs text-muted-foreground">Flow Pronti</div>
           </div>
           <div className="text-center p-2 md:p-3 rounded-lg bg-primary/10">
             <div className="text-lg md:text-2xl font-bold text-primary">{stats?.avg_confidence || 0}%</div>
-            <div className="text-[10px] md:text-xs text-muted-foreground">Conf.</div>
+            <div className="text-[10px] md:text-xs text-muted-foreground">Confidenza</div>
           </div>
         </div>
 
@@ -186,7 +257,7 @@ export function PredictiveRegistry() {
           </div>
           <div className="flex items-center gap-1">
             <Sparkles className="w-3 h-3" />
-            <span>Sync automatico ogni 30s</span>
+            <span>Auto-refresh ogni 30s</span>
           </div>
         </div>
       </CardContent>
