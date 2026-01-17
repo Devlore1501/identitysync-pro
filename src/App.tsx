@@ -15,6 +15,7 @@ import IdentityDetail from "./pages/IdentityDetail";
 import Destinations from "./pages/Destinations";
 import DashboardSettings from "./pages/DashboardSettings";
 import AuditLogs from "./pages/AuditLogs";
+import Flows from "./pages/Flows";
 import NotFound from "./pages/NotFound";
 import PricingPage from "./pages/Pricing";
 import CheckoutPage from "./pages/Checkout";
@@ -73,6 +74,11 @@ const App = () => (
               <Route path="/dashboard/audit-logs" element={
                 <ProtectedRoute>
                   <AuditLogs />
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/flows" element={
+                <ProtectedRoute>
+                  <Flows />
                 </ProtectedRoute>
               } />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
