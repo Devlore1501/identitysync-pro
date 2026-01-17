@@ -15,16 +15,11 @@ import {
   CheckCircle2,
   Clock,
   Zap,
-  Send,
   ArrowUpRight
 } from 'lucide-react';
 import { usePredictiveSignalStats, useRunPredictiveEngine } from '@/hooks/usePredictiveSignals';
-import { useWorkspace } from '@/contexts/WorkspaceContext';
-import { supabase } from '@/integrations/supabase/client';
 import { formatDistanceToNow } from 'date-fns';
 import { it } from 'date-fns/locale';
-import { toast } from 'sonner';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 
 const SIGNAL_CONFIG: Record<string, {
   icon: React.ComponentType<{ className?: string }>;
@@ -70,43 +65,12 @@ const SIGNAL_CONFIG: Record<string, {
   },
 };
 
-function useSyncToKlaviyo() {
-  const { currentWorkspace } = useWorkspace();
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async () => {
-      if (!currentWorkspace?.id) throw new Error('No workspace selected');
-
-      const { data, error } = await supabase.functions.invoke('sync-klaviyo', {
-        body: { workspace_id: currentWorkspace.id }
-      });
-
-      if (error) throw error;
-      return data;
-    },
-    onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ['predictive-signals'] });
-      queryClient.invalidateQueries({ queryKey: ['predictive-signal-stats'] });
-      queryClient.invalidateQueries({ queryKey: ['sync-intelligence'] });
-      
-      const synced = data?.profiles_updated || 0;
-      const flowsTriggered = data?.flows_triggered || 0;
-      toast.success(`Sincronizzati ${synced} profili, ${flowsTriggered} flow attivati`);
-    },
-    onError: (error) => {
-      console.error('Sync error:', error);
-      toast.error('Errore durante sincronizzazione Klaviyo');
-    }
-  });
-}
+// Sync handled by SyncStatusCompact - removed duplicate function
 
 export function PredictiveRegistry() {
   const { data: stats, isLoading, dataUpdatedAt } = usePredictiveSignalStats();
   const runEngine = useRunPredictiveEngine();
-  const syncKlaviyo = useSyncToKlaviyo();
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -114,15 +78,6 @@ export function PredictiveRegistry() {
       await runEngine.mutateAsync();
     } finally {
       setIsRefreshing(false);
-    }
-  };
-
-  const handleSync = async () => {
-    setIsSyncing(true);
-    try {
-      await syncKlaviyo.mutateAsync();
-    } finally {
-      setIsSyncing(false);
     }
   };
 
@@ -141,7 +96,6 @@ export function PredictiveRegistry() {
 
   const signalTypes = Object.entries(stats?.by_type || {}).sort((a, b) => b[1] - a[1]);
   const lastUpdated = dataUpdatedAt ? formatDistanceToNow(new Date(dataUpdatedAt), { addSuffix: true, locale: it }) : null;
-  const pendingSync = (stats?.total || 0) - (stats?.synced || 0);
 
   return (
     <Card className="border-2 border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
@@ -161,21 +115,6 @@ export function PredictiveRegistry() {
             >
               <RefreshCw className={`w-3 h-3 md:w-4 md:h-4 mr-1 ${isRefreshing || runEngine.isPending ? 'animate-spin' : ''}`} />
               Ricalcola
-            </Button>
-            <Button 
-              variant="default" 
-              size="sm" 
-              onClick={handleSync}
-              disabled={isSyncing || syncKlaviyo.isPending || pendingSync === 0}
-              className="h-7 md:h-8 text-xs"
-            >
-              <Send className={`w-3 h-3 md:w-4 md:h-4 mr-1 ${isSyncing || syncKlaviyo.isPending ? 'animate-pulse' : ''}`} />
-              Sincronizza
-              {pendingSync > 0 && (
-                <Badge variant="secondary" className="ml-1.5 h-4 px-1 text-[10px]">
-                  {pendingSync}
-                </Badge>
-              )}
             </Button>
           </div>
         </div>
