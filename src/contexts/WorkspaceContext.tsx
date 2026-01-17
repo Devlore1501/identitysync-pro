@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { Json } from '@/integrations/supabase/types';
 
 interface Workspace {
@@ -26,6 +28,7 @@ const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefin
 
 export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const { profile } = useAuth();
+  const queryClient = useQueryClient();
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | null>(null);
   const [loading, setLoading] = useState(true);
@@ -68,8 +71,14 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   }, [profile?.account_id]);
 
   const handleSetCurrentWorkspace = (workspace: Workspace) => {
+    if (workspace.id === currentWorkspace?.id) return;
+    
     setCurrentWorkspace(workspace);
     localStorage.setItem('currentWorkspaceId', workspace.id);
+    
+    // Invalida TUTTE le queries per forzare refresh con nuovo workspace
+    queryClient.invalidateQueries();
+    toast.info(`Caricamento dati ${workspace.name}...`);
   };
 
   return (
