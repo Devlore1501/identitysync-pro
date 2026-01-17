@@ -416,6 +416,75 @@ export type Database = {
           },
         ]
       }
+      predictive_signals: {
+        Row: {
+          confidence: number
+          created_at: string
+          expires_at: string | null
+          flow_name: string | null
+          flow_triggered_at: string | null
+          id: string
+          last_synced_at: string | null
+          payload: Json
+          should_trigger_flow: boolean
+          signal_name: string
+          signal_type: string
+          synced_to: Json
+          unified_user_id: string
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          confidence: number
+          created_at?: string
+          expires_at?: string | null
+          flow_name?: string | null
+          flow_triggered_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          payload?: Json
+          should_trigger_flow?: boolean
+          signal_name: string
+          signal_type: string
+          synced_to?: Json
+          unified_user_id: string
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          confidence?: number
+          created_at?: string
+          expires_at?: string | null
+          flow_name?: string | null
+          flow_triggered_at?: string | null
+          id?: string
+          last_synced_at?: string | null
+          payload?: Json
+          should_trigger_flow?: boolean
+          signal_name?: string
+          signal_type?: string
+          synced_to?: Json
+          unified_user_id?: string
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "predictive_signals_unified_user_id_fkey"
+            columns: ["unified_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_unified"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "predictive_signals_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           account_id: string
@@ -697,6 +766,14 @@ export type Database = {
         Args: { p_workspace_id: string }
         Returns: undefined
       }
+      merge_anonymous_to_identified: {
+        Args: {
+          p_anonymous_id: string
+          p_identified_user_id: string
+          p_workspace_id: string
+        }
+        Returns: Json
+      }
       process_event_fast: {
         Args: {
           p_anonymous_id: string
@@ -722,6 +799,10 @@ export type Database = {
       recompute_behavioral_signals_batch: {
         Args: { p_limit?: number }
         Returns: number
+      }
+      recompute_user_signals_from_events: {
+        Args: { p_user_id: string }
+        Returns: Json
       }
       resolve_identity: {
         Args: {
