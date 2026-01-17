@@ -1,13 +1,9 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { ValueMetricHero } from "@/components/dashboard/ValueMetricHero";
-import { BehavioralInsights } from "@/components/dashboard/BehavioralInsights";
 import { SegmentsWidget } from "@/components/dashboard/SegmentsWidget";
-import { HighIntentWidget } from "@/components/dashboard/HighIntentWidget";
 import { SyncStatusCompact } from "@/components/dashboard/SyncStatusCompact";
 import { PredictiveRegistry } from "@/components/dashboard/PredictiveRegistry";
 import { IdentityStitchingStatus } from "@/components/dashboard/IdentityStitchingStatus";
-import { ServerTrackingSnippet } from "@/components/dashboard/ServerTrackingSnippet";
-import { LeadCaptureWidget } from "@/components/dashboard/LeadCaptureWidget";
 import { 
   Brain,
   RefreshCw,
@@ -70,29 +66,17 @@ const Dashboard = () => {
         {/* MAIN VALUE METRIC - The ONE number that matters */}
         <ValueMetricHero />
 
-        {/* Identity Stitching + Lead Capture + Predictive Registry */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+        {/* Identity Stitching + Predictive Registry */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
           <IdentityStitchingStatus />
-          <LeadCaptureWidget />
           <PredictiveRegistry />
         </div>
 
         {/* Sync Status - Compact version */}
         <SyncStatusCompact />
 
-        {/* Secondary data - Hidden on mobile for clarity */}
-        <div className="hidden md:block">
-          <BehavioralInsights />
-        </div>
-
-        {/* Segments + High Intent - Simplified on mobile */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-          <SegmentsWidget />
-          <HighIntentWidget />
-        </div>
-
-        {/* Server Tracking Snippet */}
-        <ServerTrackingSnippet />
+        {/* Segments */}
+        <SegmentsWidget />
 
         {/* Setup Checklist - Only show if incomplete */}
         {(!hasApiKey || !klaviyoConnected || !(health && health.eventsToday > 0)) && (
