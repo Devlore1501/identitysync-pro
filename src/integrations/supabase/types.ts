@@ -810,17 +810,30 @@ export type Database = {
         Args: { p_user_id: string }
         Returns: Json
       }
-      resolve_identity: {
-        Args: {
-          p_anonymous_id: string
-          p_customer_id?: string
-          p_email?: string
-          p_phone?: string
-          p_source?: string
-          p_workspace_id: string
-        }
-        Returns: string
-      }
+      resolve_identity:
+        | {
+            Args: {
+              p_anonymous_id: string
+              p_customer_id?: string
+              p_email?: string
+              p_phone?: string
+              p_source?: string
+              p_workspace_id: string
+            }
+            Returns: string
+          }
+        | {
+            Args: {
+              p_ad_ids?: Json
+              p_anonymous_id: string
+              p_customer_id?: string
+              p_email?: string
+              p_phone?: string
+              p_source?: string
+              p_workspace_id: string
+            }
+            Returns: string
+          }
       schedule_sync_jobs: {
         Args: {
           p_context: Json
