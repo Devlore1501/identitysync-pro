@@ -16,16 +16,17 @@ import {
 import { useSystemHealth } from "@/hooks/useSystemHealth";
 import { useDestinations } from "@/hooks/useDestinations";
 import { useApiKeys } from "@/hooks/useApiKeys";
+import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { Button } from "@/components/ui/button";
 import { useNavigate } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { formatDistanceToNow } from "date-fns";
 import { it } from "date-fns/locale";
-import { useState } from "react";
-import { toast } from "sonner";
+import { Building2 } from "lucide-react";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { currentWorkspace, loading: workspaceLoading } = useWorkspace();
   const { data: health, isLoading, refetch } = useSystemHealth();
   const { destinations } = useDestinations();
   const { apiKeys } = useApiKeys();
@@ -42,6 +43,12 @@ const Dashboard = () => {
             <div className="flex items-center gap-2">
               <Brain className="w-5 h-5 md:w-6 md:h-6 text-primary" />
               <h1 className="text-xl md:text-2xl font-bold">IdentitySync</h1>
+              {currentWorkspace && (
+                <Badge variant="secondary" className="text-xs bg-primary/10 text-primary border-primary/20">
+                  <Building2 className="w-3 h-3 mr-1" />
+                  {currentWorkspace.name}
+                </Badge>
+              )}
             </div>
             <p className="text-xs md:text-sm text-muted-foreground mt-1">
               Recupera utenti persi nei flow Klaviyo
@@ -53,8 +60,8 @@ const Dashboard = () => {
                 Ultimo: {formatDistanceToNow(new Date(health.lastEventAt), { addSuffix: true, locale: it })}
               </Badge>
             )}
-            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
-              <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading || workspaceLoading}>
+              <RefreshCw className={`w-4 h-4 ${isLoading || workspaceLoading ? 'animate-spin' : ''}`} />
             </Button>
           </div>
         </div>
