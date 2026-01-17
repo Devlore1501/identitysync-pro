@@ -19,6 +19,11 @@ interface UseIdentitiesOptions {
   limit?: number;
   page?: number;
   search?: string;
+  hasEmail?: boolean;
+  hasPhone?: boolean;
+  anonymousOnly?: boolean;
+  dateFrom?: Date;
+  dateTo?: Date;
 }
 
 export function useIdentities(options: UseIdentitiesOptions | number = {}) {
@@ -26,10 +31,10 @@ export function useIdentities(options: UseIdentitiesOptions | number = {}) {
   
   // Support legacy call with just limit number
   const opts = typeof options === 'number' ? { limit: options } : options;
-  const { limit = 50, page = 0, search } = opts;
+  const { limit = 50, page = 0, search, hasEmail, hasPhone, anonymousOnly, dateFrom, dateTo } = opts;
 
   return useQuery({
-    queryKey: ['identities', currentWorkspace?.id, limit, page, search],
+    queryKey: ['identities', currentWorkspace?.id, limit, page, search, hasEmail, hasPhone, anonymousOnly, dateFrom?.toISOString(), dateTo?.toISOString()],
     queryFn: async (): Promise<UnifiedUser[]> => {
       if (!currentWorkspace?.id) return [];
 
@@ -41,8 +46,27 @@ export function useIdentities(options: UseIdentitiesOptions | number = {}) {
         .range(page * limit, (page + 1) * limit - 1);
 
       if (search && search.trim()) {
-        // Search in primary_email, phone, or id
         query = query.or(`primary_email.ilike.%${search}%,phone.ilike.%${search}%,id.ilike.%${search}%`);
+      }
+
+      if (hasEmail) {
+        query = query.not('primary_email', 'is', null);
+      }
+
+      if (hasPhone) {
+        query = query.not('phone', 'is', null);
+      }
+
+      if (anonymousOnly) {
+        query = query.is('primary_email', null).is('phone', null);
+      }
+
+      if (dateFrom) {
+        query = query.gte('last_seen_at', dateFrom.toISOString());
+      }
+
+      if (dateTo) {
+        query = query.lte('last_seen_at', dateTo.toISOString());
       }
 
       const { data, error } = await query;

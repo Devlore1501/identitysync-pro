@@ -1,31 +1,90 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { Button } from "@/components/ui/button";
-import { Search, Filter, Users, Mail, Phone, Cookie, Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Search, Filter, Users, Mail, Phone, Cookie, Loader2, ChevronLeft, ChevronRight, X } from "lucide-react";
 import { useIdentities, useIdentitiesCount } from "@/hooks/useIdentities";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, subDays, startOfDay, endOfDay } from "date-fns";
 import { useDebounce } from "@/hooks/useDebounce";
 
+const DATE_RANGES = [
+  { value: "all", label: "All time" },
+  { value: "today", label: "Today" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+];
+
 const PAGE_SIZE = 50;
+
+interface Filters {
+  hasEmail: boolean;
+  hasPhone: boolean;
+  anonymousOnly: boolean;
+  dateRange: string;
+}
 
 const Identities = () => {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(0);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filters, setFilters] = useState<Filters>({
+    hasEmail: false,
+    hasPhone: false,
+    anonymousOnly: false,
+    dateRange: "all",
+  });
   
   const debouncedSearch = useDebounce(searchQuery, 300);
+
+  // Calculate date range
+  const dateFrom = useMemo(() => {
+    switch (filters.dateRange) {
+      case "today":
+        return startOfDay(new Date());
+      case "7d":
+        return startOfDay(subDays(new Date(), 7));
+      case "30d":
+        return startOfDay(subDays(new Date(), 30));
+      default:
+        return undefined;
+    }
+  }, [filters.dateRange]);
+
+  const dateTo = useMemo(() => {
+    if (filters.dateRange === "all") return undefined;
+    return endOfDay(new Date());
+  }, [filters.dateRange]);
   
   const { data: profiles, isLoading } = useIdentities({ 
     limit: PAGE_SIZE, 
     page,
-    search: debouncedSearch 
+    search: debouncedSearch,
+    hasEmail: filters.hasEmail || undefined,
+    hasPhone: filters.hasPhone || undefined,
+    anonymousOnly: filters.anonymousOnly || undefined,
+    dateFrom,
+    dateTo,
   });
   const profilesCount = useIdentitiesCount(debouncedSearch);
 
   const totalPages = useMemo(() => {
     return Math.ceil((profilesCount.data || 0) / PAGE_SIZE);
   }, [profilesCount.data]);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (filters.hasEmail) count++;
+    if (filters.hasPhone) count++;
+    if (filters.anonymousOnly) count++;
+    if (filters.dateRange !== "all") count++;
+    return count;
+  }, [filters]);
 
   const handlePrevious = () => {
     if (page > 0) setPage(page - 1);
@@ -35,10 +94,19 @@ const Identities = () => {
     if (page < totalPages - 1) setPage(page + 1);
   };
 
-  // Reset page when search changes
-  useMemo(() => {
+  const handleClearFilters = () => {
+    setFilters({
+      hasEmail: false,
+      hasPhone: false,
+      anonymousOnly: false,
+      dateRange: "all",
+    });
+  };
+
+  // Reset page when search or filters change
+  useEffect(() => {
     setPage(0);
-  }, [debouncedSearch]);
+  }, [debouncedSearch, filters]);
 
   // Calculate stats from current page data
   const stats = useMemo(() => {
@@ -77,7 +145,7 @@ const Identities = () => {
           <div className="metric-card py-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center">
-                <Mail className="w-5 h-5 text-accent" />
+                <Mail className="w-5 h-5 text-accent-foreground" />
               </div>
               <div>
                 <div className="text-2xl font-bold">{stats.withEmail}</div>
@@ -121,11 +189,128 @@ const Identities = () => {
               className="w-full pl-10 pr-4 py-2 rounded-lg bg-muted/50 border border-border text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
             />
           </div>
-          <Button variant="outline" size="sm">
-            <Filter className="w-4 h-4 mr-2" />
-            Filters
-          </Button>
+          
+          <Popover open={filtersOpen} onOpenChange={setFiltersOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="sm" className="relative">
+                <Filter className="w-4 h-4 mr-2" />
+                Filters
+                {activeFiltersCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-xs flex items-center justify-center">
+                    {activeFiltersCount}
+                  </span>
+                )}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-72 p-4 bg-popover border border-border shadow-lg z-50" align="end">
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium">Filters</h4>
+                  {activeFiltersCount > 0 && (
+                    <Button variant="ghost" size="sm" onClick={handleClearFilters} className="h-auto p-1 text-xs text-muted-foreground hover:text-foreground">
+                      <X className="w-3 h-3 mr-1" />
+                      Clear all
+                    </Button>
+                  )}
+                </div>
+
+                {/* Identity Type */}
+                <div className="space-y-3">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Identity Type</Label>
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="has-email"
+                        checked={filters.hasEmail}
+                        onCheckedChange={(checked) => setFilters(prev => ({ 
+                          ...prev, 
+                          hasEmail: !!checked,
+                          anonymousOnly: checked ? false : prev.anonymousOnly 
+                        }))}
+                      />
+                      <Label htmlFor="has-email" className="text-sm cursor-pointer">Has Email</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="has-phone"
+                        checked={filters.hasPhone}
+                        onCheckedChange={(checked) => setFilters(prev => ({ 
+                          ...prev, 
+                          hasPhone: !!checked,
+                          anonymousOnly: checked ? false : prev.anonymousOnly 
+                        }))}
+                      />
+                      <Label htmlFor="has-phone" className="text-sm cursor-pointer">Has Phone</Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="anonymous-only"
+                        checked={filters.anonymousOnly}
+                        onCheckedChange={(checked) => setFilters(prev => ({ 
+                          ...prev, 
+                          anonymousOnly: !!checked,
+                          hasEmail: checked ? false : prev.hasEmail,
+                          hasPhone: checked ? false : prev.hasPhone 
+                        }))}
+                      />
+                      <Label htmlFor="anonymous-only" className="text-sm cursor-pointer">Anonymous Only</Label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Last Seen */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Last Seen</Label>
+                  <Select
+                    value={filters.dateRange}
+                    onValueChange={(value) => setFilters(prev => ({ ...prev, dateRange: value }))}
+                  >
+                    <SelectTrigger className="w-full bg-background">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-popover border border-border z-50">
+                      {DATE_RANGES.map((range) => (
+                        <SelectItem key={range.value} value={range.value}>
+                          {range.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
+
+        {/* Active filters display */}
+        {activeFiltersCount > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {filters.hasEmail && (
+              <Badge variant="secondary" className="gap-1 cursor-pointer" onClick={() => setFilters(prev => ({ ...prev, hasEmail: false }))}>
+                Has Email
+                <X className="w-3 h-3" />
+              </Badge>
+            )}
+            {filters.hasPhone && (
+              <Badge variant="secondary" className="gap-1 cursor-pointer" onClick={() => setFilters(prev => ({ ...prev, hasPhone: false }))}>
+                Has Phone
+                <X className="w-3 h-3" />
+              </Badge>
+            )}
+            {filters.anonymousOnly && (
+              <Badge variant="secondary" className="gap-1 cursor-pointer" onClick={() => setFilters(prev => ({ ...prev, anonymousOnly: false }))}>
+                Anonymous Only
+                <X className="w-3 h-3" />
+              </Badge>
+            )}
+            {filters.dateRange !== "all" && (
+              <Badge variant="secondary" className="gap-1 cursor-pointer" onClick={() => setFilters(prev => ({ ...prev, dateRange: "all" }))}>
+                {DATE_RANGES.find(r => r.value === filters.dateRange)?.label}
+                <X className="w-3 h-3" />
+              </Badge>
+            )}
+          </div>
+        )}
 
         {/* Profiles list */}
         {isLoading ? (
@@ -179,15 +364,15 @@ const Identities = () => {
           </div>
         ) : (
           <div className="metric-card text-center py-12 text-muted-foreground">
-            <p className="mb-2">{searchQuery ? 'No profiles found matching your search' : 'No profiles resolved yet'}</p>
-            <p className="text-sm">{searchQuery ? 'Try a different search term.' : 'Profiles will appear here once you start tracking and identifying users.'}</p>
+            <p className="mb-2">{searchQuery || activeFiltersCount > 0 ? 'No profiles found matching your criteria' : 'No profiles resolved yet'}</p>
+            <p className="text-sm">{searchQuery || activeFiltersCount > 0 ? 'Try adjusting your search or filters.' : 'Profiles will appear here once you start tracking and identifying users.'}</p>
           </div>
         )}
 
         {/* Pagination */}
         <div className="flex items-center justify-between">
           <p className="text-sm text-muted-foreground">
-            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, profilesCount.data || 0)} of {(profilesCount.data || 0).toLocaleString()} profiles
+            Showing {profiles && profiles.length > 0 ? page * PAGE_SIZE + 1 : 0}-{Math.min((page + 1) * PAGE_SIZE, profilesCount.data || 0)} of {(profilesCount.data || 0).toLocaleString()} profiles
           </p>
           <div className="flex items-center gap-2">
             <Button 
