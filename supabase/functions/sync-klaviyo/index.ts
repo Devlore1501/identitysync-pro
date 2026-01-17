@@ -344,7 +344,12 @@ function buildBehavioralProperties(user: {
   customer_ids?: string[];
   anonymous_ids?: string[];
   traits?: Record<string, unknown>;
-}, eventType?: string, eventName?: string): Record<string, unknown> {
+}, eventType?: string, eventName?: string, predictiveSignals?: Array<{
+  signal_type: string;
+  signal_name: string;
+  confidence: number;
+  flow_name: string | null;
+}>): Record<string, unknown> {
   const computed = user.computed || {};
   const now = new Date().toISOString();
   
@@ -379,6 +384,36 @@ function buildBehavioralProperties(user: {
     eventName === 'Product Added';
   if (isCartEvent) {
     lastCartAt = now;
+  }
+
+  // Build predictive signal properties
+  let predictiveProps: Record<string, unknown> = {};
+  if (predictiveSignals && predictiveSignals.length > 0) {
+    // Get the highest confidence signal
+    const topSignal = predictiveSignals.reduce((a, b) => 
+      a.confidence > b.confidence ? a : b
+    );
+    
+    predictiveProps = {
+      // Primary predictive signal
+      sf_predicted_action: topSignal.signal_type,
+      sf_predicted_confidence: topSignal.confidence,
+      sf_predicted_flow: topSignal.flow_name,
+      
+      // All active signals as array
+      sf_active_signals: predictiveSignals.map(s => s.signal_type).join(','),
+      sf_signals_count: predictiveSignals.length,
+      
+      // Specific signal flags for Klaviyo flow triggers
+      sf_is_high_intent_cart: predictiveSignals.some(s => s.signal_type === 'high_intent_cart'),
+      sf_is_checkout_urgent: predictiveSignals.some(s => s.signal_type === 'checkout_urgency'),
+      sf_is_browse_warming: predictiveSignals.some(s => s.signal_type === 'browse_warming'),
+      sf_is_churn_risk: predictiveSignals.some(s => s.signal_type === 'churn_risk'),
+      sf_is_about_to_purchase: predictiveSignals.some(s => s.signal_type === 'about_to_purchase'),
+      
+      // Timestamp for flow timing
+      sf_predicted_at: now,
+    };
   }
   
   return {
@@ -418,6 +453,9 @@ function buildBehavioralProperties(user: {
     sf_email_engagement_score: computed.email_engagement_score ?? 0,
     sf_is_subscribed: computed.is_subscribed ?? null,
     sf_last_klaviyo_event: computed.last_klaviyo_event ?? null,
+    
+    // === PREDICTIVE SIGNALS (NEW!) ===
+    ...predictiveProps,
     
     // === METADATA ===
     sf_last_event_type: eventType ?? computed.last_event_type ?? null,
@@ -553,9 +591,16 @@ Deno.serve(async (req) => {
       // Check if forced sync is needed (now with event context for intent filtering)
       const forceReason = shouldForceProfileSync(computed, flags, eventType, eventName);
 
-      // ===== STEP 1: ALWAYS UPDATE PROFILE =====
+      // ===== STEP 1: FETCH PREDICTIVE SIGNALS FOR THIS USER =====
+      const { data: predictiveSignals } = await supabase
+        .from('predictive_signals')
+        .select('signal_type, signal_name, confidence, flow_name, should_trigger_flow, id')
+        .eq('unified_user_id', user.id)
+        .is('flow_triggered_at', null); // Only pending signals
+
+      // ===== STEP 2: ALWAYS UPDATE PROFILE WITH PREDICTIVE SIGNALS =====
       // This ensures sf_* properties are ALWAYS synced to Klaviyo
-      const behavioralProps = buildBehavioralProperties(user, eventType, eventName);
+      const behavioralProps = buildBehavioralProperties(user, eventType, eventName, predictiveSignals || []);
       
       const profile: KlaviyoProfile = {
         type: 'profile',
@@ -622,6 +667,64 @@ Deno.serve(async (req) => {
           .eq('id', user.id);
         
         flagsUpdated++;
+        
+        // ===== STEP 3: TRIGGER PREDICTIVE FLOW EVENTS =====
+        if (predictiveSignals && predictiveSignals.length > 0) {
+          for (const signal of predictiveSignals) {
+            if (signal.should_trigger_flow && signal.flow_name) {
+              // Send a Klaviyo event to trigger the flow
+              const flowEvent: KlaviyoEvent = {
+                type: 'event',
+                attributes: {
+                  metric: {
+                    data: {
+                      type: 'metric',
+                      attributes: { name: signal.flow_name },
+                    },
+                  },
+                  profile: {
+                    data: {
+                      type: 'profile',
+                      attributes: {
+                        email: user.primary_email,
+                        external_id: user.id,
+                      },
+                    },
+                  },
+                  properties: {
+                    signal_type: signal.signal_type,
+                    signal_name: signal.signal_name,
+                    confidence: signal.confidence,
+                    sf_intent_score: computed.intent_score ?? 0,
+                    sf_dropoff_stage: behavioralProps.sf_dropoff_stage,
+                    triggered_at: new Date().toISOString(),
+                  },
+                  time: new Date().toISOString(),
+                  unique_id: `predictive_${signal.id}_${Date.now()}`,
+                },
+              };
+              
+              const flowResult = await trackKlaviyoEvent(klaviyoApiKey, flowEvent);
+              
+              if (flowResult.success) {
+                console.log(`[PREDICTIVE] Flow triggered: ${signal.flow_name} for ${user.primary_email}`);
+                
+                // Mark signal as triggered
+                await supabase
+                  .from('predictive_signals')
+                  .update({ 
+                    flow_triggered_at: new Date().toISOString(),
+                    should_trigger_flow: false,
+                    synced_to: { klaviyo: new Date().toISOString() },
+                    last_synced_at: new Date().toISOString()
+                  })
+                  .eq('id', signal.id);
+              } else {
+                console.error(`[PREDICTIVE] Flow trigger failed: ${signal.flow_name}`, flowResult.error);
+              }
+            }
+          }
+        }
       }
 
       // ===== STEP 2: CONDITIONALLY TRACK EVENT =====
