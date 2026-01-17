@@ -355,18 +355,14 @@ async function processEventOptimized(
 }
 
 Deno.serve(async (req) => {
-  console.log('=== COLLECT FUNCTION CALLED ===');
-  console.log('Method:', req.method);
-  console.log('URL:', req.url);
+  const startTime = Date.now();
   
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
-    console.log('CORS preflight request');
     return new Response(null, { headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
-    console.log('Method not allowed:', req.method);
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -405,17 +401,25 @@ Deno.serve(async (req) => {
     // Parse payload
     const payload: CollectPayload = await req.json();
     
-    console.log('=== COLLECT RECEIVED EVENT ===');
-    console.log('Event name:', payload.event);
-    console.log('Anonymous ID:', payload.context?.anonymous_id || 'not provided');
-    console.log('Session ID:', payload.context?.session_id || 'not provided');
+    // STRUCTURED LOGGING
+    console.log(JSON.stringify({
+      fn: 'collect',
+      workspace_id: authResult.workspaceId,
+      event_name: payload.event,
+      anonymous_id: payload.context?.anonymous_id,
+      session_id: payload.context?.session_id,
+      has_email: !!payload.context?.traits?.email,
+      checkout_id: (payload.properties as Record<string, unknown>)?.checkout_id,
+      cart_token: (payload.properties as Record<string, unknown>)?.cart_token,
+      order_id: (payload.properties as Record<string, unknown>)?.order_id,
+      ts: new Date().toISOString()
+    }));
 
     // SECURITY: Validate payload size limits to prevent DoS attacks
     const propertiesSize = JSON.stringify(payload.properties || {}).length;
     const contextSize = JSON.stringify(payload.context || {}).length;
     
-    if (propertiesSize > 50000) { // 50KB limit for properties
-      console.log('ERROR: Properties payload too large:', propertiesSize);
+    if (propertiesSize > 50000) {
       return new Response(
         JSON.stringify({ error: 'Properties payload too large (max 50KB)' }),
         { status: 413, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
