@@ -242,12 +242,14 @@ Deno.serve(async (req) => {
       : 0;
 
     // ===== EXTENDED FUNNEL QUERIES =====
+    // NOTE: Since computed fields (last_product_viewed_at, last_cart_at) are not populated,
+    // we count users who have these events directly by joining events with users_unified
     
-    // Product view events
+    // Product view events total
     let productViewQuery = supabase
       .from('events')
       .select('id', { count: 'exact', head: true })
-      .eq('event_type', 'product')
+      .in('event_type', ['product', 'product_view', 'Product Viewed'])
       .gte('event_time', periodStart.toISOString())
       .lte('event_time', periodEnd.toISOString());
     
@@ -257,19 +259,34 @@ Deno.serve(async (req) => {
     
     const { count: productViewsTotal } = await productViewQuery;
 
-    // Product view high intent (intent >= 30) - profiles
-    let productHighIntentQuery = supabase
-      .from('users_unified')
-      .select('id', { count: 'exact', head: true })
-      .not('primary_email', 'is', null)
-      .gte('computed->>intent_score', '30')
-      .not('computed->>last_product_viewed_at', 'is', null);
+    // Product view high intent - count unique users with product events who have email + intent >= 30
+    // We get users who have had product view events
+    let productUsersQuery = supabase
+      .from('events')
+      .select('unified_user_id')
+      .in('event_type', ['product', 'product_view', 'Product Viewed'])
+      .not('unified_user_id', 'is', null)
+      .gte('event_time', periodStart.toISOString())
+      .lte('event_time', periodEnd.toISOString());
     
     if (workspaceId) {
-      productHighIntentQuery = productHighIntentQuery.eq('workspace_id', workspaceId);
+      productUsersQuery = productUsersQuery.eq('workspace_id', workspaceId);
     }
     
-    const { count: productViewHighIntent } = await productHighIntentQuery;
+    const { data: productUserIds } = await productUsersQuery;
+    const uniqueProductUserIds = [...new Set((productUserIds || []).map(e => e.unified_user_id))];
+    
+    // Now count how many of these have email + intent >= 30
+    let productHighIntentCount = 0;
+    if (uniqueProductUserIds.length > 0) {
+      const { count } = await supabase
+        .from('users_unified')
+        .select('id', { count: 'exact', head: true })
+        .in('id', uniqueProductUserIds)
+        .not('primary_email', 'is', null)
+        .gte('computed->>intent_score', '30');
+      productHighIntentCount = count || 0;
+    }
 
     // Product view synced
     let productSyncedQuery = supabase
@@ -283,11 +300,11 @@ Deno.serve(async (req) => {
     
     const { count: productViewSynced } = await productSyncedQuery;
 
-    // Cart events
+    // Cart events total
     let cartEventsQuery = supabase
       .from('events')
       .select('id', { count: 'exact', head: true })
-      .eq('event_type', 'cart')
+      .in('event_type', ['cart', 'add_to_cart', 'Product Added'])
       .gte('event_time', periodStart.toISOString())
       .lte('event_time', periodEnd.toISOString());
     
@@ -297,19 +314,33 @@ Deno.serve(async (req) => {
     
     const { count: cartEventsTotal } = await cartEventsQuery;
 
-    // Cart high intent (intent >= 50) - profiles
-    let cartHighIntentQuery = supabase
-      .from('users_unified')
-      .select('id', { count: 'exact', head: true })
-      .not('primary_email', 'is', null)
-      .gte('computed->>intent_score', '50')
-      .not('computed->>last_cart_at', 'is', null);
+    // Cart high intent - count unique users with cart events who have email + intent >= 50
+    let cartUsersQuery = supabase
+      .from('events')
+      .select('unified_user_id')
+      .in('event_type', ['cart', 'add_to_cart', 'Product Added'])
+      .not('unified_user_id', 'is', null)
+      .gte('event_time', periodStart.toISOString())
+      .lte('event_time', periodEnd.toISOString());
     
     if (workspaceId) {
-      cartHighIntentQuery = cartHighIntentQuery.eq('workspace_id', workspaceId);
+      cartUsersQuery = cartUsersQuery.eq('workspace_id', workspaceId);
     }
     
-    const { count: cartHighIntent } = await cartHighIntentQuery;
+    const { data: cartUserIds } = await cartUsersQuery;
+    const uniqueCartUserIds = [...new Set((cartUserIds || []).map(e => e.unified_user_id))];
+    
+    // Now count how many of these have email + intent >= 50
+    let cartHighIntentCount = 0;
+    if (uniqueCartUserIds.length > 0) {
+      const { count } = await supabase
+        .from('users_unified')
+        .select('id', { count: 'exact', head: true })
+        .in('id', uniqueCartUserIds)
+        .not('primary_email', 'is', null)
+        .gte('computed->>intent_score', '50');
+      cartHighIntentCount = count || 0;
+    }
 
     // Cart synced
     let cartSyncedQuery = supabase
@@ -354,15 +385,15 @@ Deno.serve(async (req) => {
       
       extended_funnel: {
         product_views_total: productViewsTotal || 0,
-        product_view_high_intent: productViewHighIntent || 0,
+        product_view_high_intent: productHighIntentCount,
         product_view_synced: productViewSynced || 0,
         
         cart_events_total: cartEventsTotal || 0,
-        cart_high_intent: cartHighIntent || 0,
+        cart_high_intent: cartHighIntentCount,
         cart_synced: cartSynced || 0,
         
-        browse_abandonment_potential: (productViewHighIntent || 0) - (productViewSynced || 0),
-        cart_abandonment_potential: (cartHighIntent || 0) - (cartSynced || 0),
+        browse_abandonment_potential: productHighIntentCount - (productViewSynced || 0),
+        cart_abandonment_potential: cartHighIntentCount - (cartSynced || 0),
       },
     };
 
