@@ -57,3 +57,6 @@ verify_jwt = false
 
 [functions.poll-klaviyo-events]
 verify_jwt = false
+
+[functions.backfill-computed]
+verify_jwt = false

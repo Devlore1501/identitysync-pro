@@ -2,13 +2,15 @@ import { useEffect, useState } from "react";
 import { useWorkspace } from "@/contexts/WorkspaceContext";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { usePixelStatus } from "@/hooks/useFunnelStats";
+import { useEcommerceHealth } from "@/hooks/useEcommerceHealth";
 import { supabase } from "@/integrations/supabase/client";
-import { CheckCircle2, XCircle, Loader2, AlertCircle, Copy, ExternalLink, ChevronDown, ChevronUp } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertCircle, Copy, ExternalLink, ChevronDown, ChevronUp, TestTube } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { toast } from "sonner";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { EcommerceHealthCheck } from "./EcommerceHealthCheck";
 
 interface ChecklistItem {
   id: string;
@@ -24,8 +26,10 @@ export function ShopifySetupChecklist() {
   const { currentWorkspace } = useWorkspace();
   const { apiKeys, isLoading: apiKeysLoading } = useApiKeys();
   const { data: pixelStatus, isLoading: pixelLoading } = usePixelStatus();
+  const { data: ecommerceHealth } = useEcommerceHealth();
   const [identityBridgeStatus, setIdentityBridgeStatus] = useState<'loading' | 'active' | 'inactive'>('loading');
   const [expandedItems, setExpandedItems] = useState<string[]>([]);
+  const [testingTracking, setTestingTracking] = useState(false);
 
   // Check identity bridge status
   useEffect(() => {
@@ -56,11 +60,78 @@ export function ShopifySetupChecklist() {
   const jsPixelActive = pixelStatus?.jsPixel?.lastEvent != null;
   const webhooksActive = pixelStatus?.webhooks?.lastEvent != null;
   const shopifyEventsActive = pixelStatus?.webhooks?.countLast24h && pixelStatus.webhooks.countLast24h > 0;
+  const hasEcommerceEvents = ecommerceHealth?.overall === 'healthy' || ecommerceHealth?.overall === 'warning';
 
   const toggleExpanded = (id: string) => {
     setExpandedItems(prev => 
       prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
     );
+  };
+
+  // Test tracking function
+  const sendTestEvents = async () => {
+    if (!hasApiKey || !apiKeys?.[0]) {
+      toast.error('Crea prima una API key');
+      return;
+    }
+
+    setTestingTracking(true);
+    const testAnonymousId = `test_${Date.now()}`;
+    
+    try {
+      // Send test Page View
+      await supabase.functions.invoke('collect', {
+        body: {
+          apiKey: apiKeys[0].key_prefix + '_test',
+          anonymousId: testAnonymousId,
+          event: 'page',
+          properties: {
+            path: '/test-page',
+            title: 'Test Page',
+            test: true
+          }
+        }
+      });
+
+      // Send test Product Viewed
+      await supabase.functions.invoke('collect', {
+        body: {
+          apiKey: apiKeys[0].key_prefix + '_test',
+          anonymousId: testAnonymousId,
+          event: 'Product Viewed',
+          properties: {
+            product_handle: 'test-product',
+            product_name: 'Test Product',
+            price: 29.99,
+            currency: 'EUR',
+            test: true
+          }
+        }
+      });
+
+      // Send test Add to Cart
+      await supabase.functions.invoke('collect', {
+        body: {
+          apiKey: apiKeys[0].key_prefix + '_test',
+          anonymousId: testAnonymousId,
+          event: 'Add to Cart',
+          properties: {
+            product_handle: 'test-product',
+            product_name: 'Test Product',
+            price: 29.99,
+            quantity: 1,
+            test: true
+          }
+        }
+      });
+
+      toast.success('Eventi di test inviati! Verifica nella tab Events.');
+    } catch (err) {
+      console.error('Test tracking error:', err);
+      toast.error('Errore nell\'invio degli eventi di test');
+    } finally {
+      setTestingTracking(false);
+    }
   };
 
   const checklist: ChecklistItem[] = [
@@ -260,8 +331,24 @@ export function ShopifySetupChecklist() {
         ))}
       </div>
 
+      {/* E-commerce Health Check */}
+      <EcommerceHealthCheck />
+
       {/* Quick Links */}
       <div className="flex gap-2 flex-wrap">
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={sendTestEvents}
+          disabled={testingTracking || !hasApiKey}
+        >
+          {testingTracking ? (
+            <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+          ) : (
+            <TestTube className="w-3 h-3 mr-2" />
+          )}
+          Test Tracking
+        </Button>
         <Button variant="outline" size="sm" asChild>
           <a href="https://help.shopify.com/en/manual/orders/notifications/webhooks" target="_blank" rel="noopener noreferrer">
             <ExternalLink className="w-3 h-3 mr-2" />
