@@ -192,9 +192,20 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     }
   });
   
-  // === SHOPIFY AUTO-TRACKING ===
-  if(w.Shopify){
-    var currency=w.Shopify.currency?w.Shopify.currency.active:'USD';
+  // === SHOPIFY AUTO-TRACKING with retry ===
+  function initShopifyTracking(){
+    if(!w.Shopify&&!w.ShopifyAnalytics){
+      // Fallback: detect Shopify pages via URL patterns
+      var isShopifyPage=location.pathname.includes('/products/')||
+                        location.pathname.includes('/collections/')||
+                        location.pathname.includes('/cart')||
+                        location.pathname.includes('/checkout')||
+                        location.pathname.includes('/thank_you')||
+                        location.pathname.includes('/orders/');
+      if(!isShopifyPage)return false;
+    }
+    
+    var currency=(w.Shopify&&w.Shopify.currency)?w.Shopify.currency.active:'USD';
     
     // === COLLECTION/CATEGORY VIEW ===
     if(location.pathname.includes('/collections/')&&!location.pathname.includes('/products/')){
@@ -209,8 +220,9 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     }
     
     // === PRODUCT VIEW (enhanced with category) ===
-    if(w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.product){
-      var p=w.ShopifyAnalytics.meta.product;
+    var productMeta=w.ShopifyAnalytics&&w.ShopifyAnalytics.meta&&w.ShopifyAnalytics.meta.product;
+    if(productMeta){
+      var p=productMeta;
       // Track products viewed for depth calculation
       var viewedProducts=JSON.parse(localStorage.getItem('sf_viewed_products')||'[]');
       if(!viewedProducts.includes(p.id.toString())){
@@ -230,6 +242,19 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         price:p.variants?(p.variants[0]?.price||0)/100:0,
         currency:currency,
         total_products_viewed:viewedProducts.length
+      });
+    }else if(location.pathname.includes('/products/')){
+      // Fallback product view without ShopifyAnalytics
+      var handle=location.pathname.split('/products/')[1]?.split('?')[0]||'';
+      var title=document.querySelector('h1')?.textContent?.trim()||handle;
+      var priceEl=document.querySelector('[class*="price"],[data-price],.product-price');
+      var price=priceEl?parseFloat(priceEl.textContent?.replace(/[^0-9.]/g,'')||'0'):0;
+      
+      w.sfTrack('Product Viewed',{
+        product_handle:handle,
+        product_name:title,
+        price:price,
+        currency:currency
       });
     }
     
@@ -262,35 +287,38 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     });
     
     // === CART OPERATIONS (fetch hook) ===
-    var origFetch=w.fetch;
-    w.fetch=function(url,opts){
-      if(url){
-        // Add to Cart
-        if(url.includes('/cart/add')){
-          try{
-            var body=opts&&opts.body?JSON.parse(opts.body):{};
-            w.sfTrack('Add to Cart',{
-              product_id:body.id,
-              quantity:body.quantity||1,
-              currency:currency,
-              properties:body.properties||{}
-            });
-          }catch(e){}
+    if(!w._sfFetchHooked){
+      w._sfFetchHooked=true;
+      var origFetch=w.fetch;
+      w.fetch=function(url,opts){
+        if(url){
+          // Add to Cart
+          if(url.includes('/cart/add')){
+            try{
+              var body=opts&&opts.body?JSON.parse(opts.body):{};
+              w.sfTrack('Add to Cart',{
+                product_id:body.id,
+                quantity:body.quantity||1,
+                currency:currency,
+                properties:body.properties||{}
+              });
+            }catch(e){}
+          }
+          // Remove from Cart
+          if(url.includes('/cart/change')){
+            try{
+              var body=opts&&opts.body?JSON.parse(opts.body):{};
+              if(body.quantity===0){
+                w.sfTrack('Remove from Cart',{line:body.line,currency:currency});
+              }else{
+                w.sfTrack('Update Cart',{line:body.line,quantity:body.quantity,currency:currency});
+              }
+            }catch(e){}
+          }
         }
-        // Remove from Cart
-        if(url.includes('/cart/change')){
-          try{
-            var body=opts&&opts.body?JSON.parse(opts.body):{};
-            if(body.quantity===0){
-              w.sfTrack('Remove from Cart',{line:body.line,currency:currency});
-            }else{
-              w.sfTrack('Update Cart',{line:body.line,quantity:body.quantity,currency:currency});
-            }
-          }catch(e){}
-        }
-      }
-      return origFetch.apply(this,arguments);
-    };
+        return origFetch.apply(this,arguments);
+      };
+    }
     
     // === CART VIEWED ===
     document.querySelectorAll('[href="/cart"],[data-cart-toggle],[class*="cart-icon"],[class*="cart-drawer"]').forEach(function(el){
@@ -341,7 +369,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     
     // === PURCHASE (Thank you page) ===
     if(location.pathname.includes('/thank_you')||location.pathname.includes('/orders/')){
-      if(w.Shopify.checkout){
+      if(w.Shopify&&w.Shopify.checkout){
         var c=w.Shopify.checkout;
         var checkoutEmail=c.email||localStorage.getItem('sf_checkout_email');
         
@@ -398,6 +426,20 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         }
       }
     }
+    
+    return true;
+  }
+  
+  // Try immediately, then retry with polling if Shopify not ready
+  if(!initShopifyTracking()){
+    var retryCount=0;
+    var maxRetries=10;
+    var retryInterval=setInterval(function(){
+      retryCount++;
+      if(initShopifyTracking()||retryCount>=maxRetries){
+        clearInterval(retryInterval);
+      }
+    },500);
   }
   
   // === POPUP/FORM TRACKING ===
