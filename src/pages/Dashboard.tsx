@@ -7,6 +7,7 @@ import { SyncStatusCompact } from "@/components/dashboard/SyncStatusCompact";
 import { PredictiveRegistry } from "@/components/dashboard/PredictiveRegistry";
 import { IdentityStitchingStatus } from "@/components/dashboard/IdentityStitchingStatus";
 import { ServerTrackingSnippet } from "@/components/dashboard/ServerTrackingSnippet";
+import { LeadCaptureWidget } from "@/components/dashboard/LeadCaptureWidget";
 import { 
   Brain,
   RefreshCw,
@@ -69,9 +70,10 @@ const Dashboard = () => {
         {/* MAIN VALUE METRIC - The ONE number that matters */}
         <ValueMetricHero />
 
-        {/* Identity Stitching + Predictive Registry */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+        {/* Identity Stitching + Lead Capture + Predictive Registry */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
           <IdentityStitchingStatus />
+          <LeadCaptureWidget />
           <PredictiveRegistry />
         </div>
 

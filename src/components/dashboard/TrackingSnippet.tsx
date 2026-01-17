@@ -51,7 +51,7 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   // Use the key for snippet display and verification
   const snippetKey = hasFullKey ? apiKey : displayKey;
 
-  const snippet = `<!-- SignalForge Tracking Snippet - Behavioral Intelligence -->
+  const snippet = `<!-- SignalForge Tracking Snippet - Behavioral Intelligence + Lead Capture -->
 <script>
 (function(w,d,s,l,i){
   w.SignalForge=w.SignalForge||[];
@@ -88,7 +88,40 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
   w._sfFbp=getCookie('_fbp')||'';
   w._sfFbc=getCookie('_fbc')||'';
   
-  // Track function with behavioral context
+  // ===== ADVERTISING IDs CAPTURE (Google + Meta) =====
+  var url=new URL(location.href);
+  var adIds={};
+  // Google Click IDs
+  var gclid=url.searchParams.get('gclid');
+  var gbraid=url.searchParams.get('gbraid');
+  var wbraid=url.searchParams.get('wbraid');
+  // Meta Click ID
+  var fbclid=url.searchParams.get('fbclid');
+  // UTM parameters
+  var utm_source=url.searchParams.get('utm_source');
+  var utm_medium=url.searchParams.get('utm_medium');
+  var utm_campaign=url.searchParams.get('utm_campaign');
+  var utm_content=url.searchParams.get('utm_content');
+  var utm_term=url.searchParams.get('utm_term');
+  
+  // Store in localStorage for persistence across pages
+  if(gclid){localStorage.setItem('sf_gclid',gclid);adIds.gclid=gclid}else{adIds.gclid=localStorage.getItem('sf_gclid')||''}
+  if(gbraid){localStorage.setItem('sf_gbraid',gbraid);adIds.gbraid=gbraid}else{adIds.gbraid=localStorage.getItem('sf_gbraid')||''}
+  if(wbraid){localStorage.setItem('sf_wbraid',wbraid);adIds.wbraid=wbraid}else{adIds.wbraid=localStorage.getItem('sf_wbraid')||''}
+  if(fbclid){localStorage.setItem('sf_fbclid',fbclid);adIds.fbclid=fbclid}else{adIds.fbclid=localStorage.getItem('sf_fbclid')||''}
+  // Store UTMs
+  if(utm_source){localStorage.setItem('sf_utm_source',utm_source)}
+  if(utm_medium){localStorage.setItem('sf_utm_medium',utm_medium)}
+  if(utm_campaign){localStorage.setItem('sf_utm_campaign',utm_campaign)}
+  if(utm_content){localStorage.setItem('sf_utm_content',utm_content)}
+  if(utm_term){localStorage.setItem('sf_utm_term',utm_term)}
+  
+  // Add Facebook cookies
+  adIds.fbp=w._sfFbp;
+  adIds.fbc=w._sfFbc;
+  w._sfAdIds=adIds;
+  
+  // Track function with behavioral context + advertising IDs
   w.sfTrack=function(event,props){
     var payload={
       event:event,
@@ -104,7 +137,15 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
         page:{url:location.href,title:document.title,referrer:document.referrer},
         screen:{width:screen.width,height:screen.height},
         fbp:w._sfFbp,
-        fbc:w._sfFbc
+        fbc:w._sfFbc,
+        ad_ids:w._sfAdIds,
+        utm:{
+          source:localStorage.getItem('sf_utm_source')||'',
+          medium:localStorage.getItem('sf_utm_medium')||'',
+          campaign:localStorage.getItem('sf_utm_campaign')||'',
+          content:localStorage.getItem('sf_utm_content')||'',
+          term:localStorage.getItem('sf_utm_term')||''
+        }
       },
       timestamp:new Date().toISOString()
     };
@@ -115,20 +156,132 @@ export function TrackingSnippet({ fullApiKey }: TrackingSnippetProps) {
     }).catch(function(e){console.warn('SignalForge:',e)});
   };
   
-  // Identify function  
+  // Identify function with capture source tracking
   w.sfIdentify=function(email,traits){
     if(!email||!email.includes('@'))return;
     localStorage.setItem('sf_identified_email',email);
+    var enrichedTraits=Object.assign({},traits||{},{
+      ad_ids:w._sfAdIds,
+      capture_source:traits&&traits.capture_source?traits.capture_source:'unknown',
+      utm_source:localStorage.getItem('sf_utm_source')||'',
+      utm_medium:localStorage.getItem('sf_utm_medium')||'',
+      utm_campaign:localStorage.getItem('sf_utm_campaign')||''
+    });
     fetch(w._sfIdentify,{
       method:'POST',
       headers:{'Content-Type':'application/json','x-api-key':w._sfKey},
       body:JSON.stringify({
         anonymous_id:w._sfAid,
         email:email,
-        traits:traits||{}
+        traits:enrichedTraits
       })
     }).catch(function(e){console.warn('SignalForge:',e)});
   };
+  
+  // ===== SHOPIFY CUSTOMER DETECTION (logged-in users) =====
+  function detectShopifyCustomer(){
+    if(w.Shopify&&w.Shopify.customer){
+      var c=w.Shopify.customer;
+      if(c.email){
+        w.sfIdentify(c.email,{
+          capture_source:'shopify_account',
+          customer_id:c.id||'',
+          first_name:c.firstName||'',
+          last_name:c.lastName||''
+        });
+      }
+    }
+    // Try __st for older Shopify
+    if(w.__st&&w.__st.cid){
+      var email=localStorage.getItem('sf_identified_email');
+      if(email){
+        w.sfIdentify(email,{capture_source:'shopify_session',customer_id:w.__st.cid});
+      }
+    }
+  }
+  
+  // ===== FORM EMAIL AUTO-CAPTURE =====
+  function setupFormCapture(){
+    // MutationObserver for dynamically added forms
+    var observer=new MutationObserver(function(mutations){
+      mutations.forEach(function(m){
+        m.addedNodes.forEach(function(node){
+          if(node.tagName==='FORM')attachFormListener(node);
+          if(node.querySelectorAll){
+            node.querySelectorAll('form').forEach(attachFormListener);
+          }
+        });
+      });
+    });
+    observer.observe(document.body,{childList:true,subtree:true});
+    
+    // Attach to existing forms
+    document.querySelectorAll('form').forEach(attachFormListener);
+  }
+  
+  function attachFormListener(form){
+    if(form._sfAttached)return;
+    form._sfAttached=true;
+    
+    // Capture on submit
+    form.addEventListener('submit',function(){
+      var emailInput=form.querySelector('input[type="email"],input[name*="email"],input[placeholder*="email"],input[id*="email"]');
+      if(emailInput&&emailInput.value&&emailInput.value.includes('@')){
+        var source='form_submit';
+        if(form.action&&form.action.includes('subscribe'))source='newsletter_form';
+        if(form.action&&form.action.includes('contact'))source='contact_form';
+        if(form.classList.contains('newsletter')||form.id.includes('newsletter'))source='newsletter_form';
+        w.sfIdentify(emailInput.value,{capture_source:source});
+      }
+    });
+    
+    // Capture on blur (for popups that don't submit normally)
+    var emailInputs=form.querySelectorAll('input[type="email"],input[name*="email"]');
+    emailInputs.forEach(function(input){
+      input.addEventListener('blur',function(){
+        if(input.value&&input.value.includes('@')){
+          w.sfTrack('Email Field Blur',{email_partial:input.value.split('@')[0].substr(0,3)+'***',field_name:input.name||'unknown'});
+        }
+      });
+    });
+  }
+  
+  // ===== REAL-TIME CHECKOUT EMAIL CAPTURE =====
+  function setupCheckoutEmailCapture(){
+    var debounce;
+    var selectors=['#checkout_email','#email','input[name="checkout[email]"]','input[autocomplete="email"]','input[type="email"]'];
+    
+    function captureEmail(){
+      selectors.forEach(function(sel){
+        var field=document.querySelector(sel);
+        if(field&&field.value&&field.value.includes('@')){
+          clearTimeout(debounce);
+          debounce=setTimeout(function(){
+            if(!localStorage.getItem('sf_checkout_captured_'+field.value)){
+              localStorage.setItem('sf_checkout_captured_'+field.value,'1');
+              w.sfIdentify(field.value,{capture_source:'checkout_realtime'});
+            }
+          },1000);
+        }
+      });
+    }
+    
+    // Listen for input on checkout page
+    if(location.pathname.includes('/checkout')){
+      document.addEventListener('input',function(e){
+        if(e.target&&(e.target.type==='email'||e.target.name==='email'||e.target.autocomplete==='email')){
+          captureEmail();
+        }
+      });
+    }
+  }
+  
+  // Initialize all capture methods
+  setTimeout(function(){
+    detectShopifyCustomer();
+    setupFormCapture();
+    setupCheckoutEmailCapture();
+  },1000);
   
   // === SESSION START TRACKING (new session only) ===
   if(isNewSession){

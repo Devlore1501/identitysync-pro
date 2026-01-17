@@ -370,6 +370,7 @@ export type Database = {
       }
       identities: {
         Row: {
+          capture_source: string | null
           confidence: number
           created_at: string
           id: string
@@ -380,6 +381,7 @@ export type Database = {
           workspace_id: string
         }
         Insert: {
+          capture_source?: string | null
           confidence?: number
           created_at?: string
           id?: string
@@ -390,6 +392,7 @@ export type Database = {
           workspace_id: string
         }
         Update: {
+          capture_source?: string | null
           confidence?: number
           created_at?: string
           id?: string
@@ -643,6 +646,7 @@ export type Database = {
       }
       users_unified: {
         Row: {
+          ad_ids: Json | null
           anonymous_ids: string[]
           computed: Json
           created_at: string
@@ -659,6 +663,7 @@ export type Database = {
           workspace_id: string
         }
         Insert: {
+          ad_ids?: Json | null
           anonymous_ids?: string[]
           computed?: Json
           created_at?: string
@@ -675,6 +680,7 @@ export type Database = {
           workspace_id: string
         }
         Update: {
+          ad_ids?: Json | null
           anonymous_ids?: string[]
           computed?: Json
           created_at?: string
