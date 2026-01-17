@@ -14,6 +14,7 @@ import { useUpdateWorkspace, useUpdateWorkspaceSettings } from "@/hooks/useWorks
 import { useBillingUsage } from "@/hooks/useBillingUsage";
 import { TrackingSnippet } from "@/components/dashboard/TrackingSnippet";
 import { PixelStatus } from "@/components/dashboard/PixelStatus";
+import { ShopifySetupChecklist } from "@/components/dashboard/ShopifySetupChecklist";
 import { KlaviyoSyncSection } from "@/components/dashboard/KlaviyoSyncSection";
 import { WorkspaceManager } from "@/components/dashboard/WorkspaceManager";
 import { BillingSection } from "@/components/dashboard/BillingSection";
@@ -692,6 +693,15 @@ const DashboardSettings = () => {
 
           {/* Installation Tab */}
           <TabsContent value="installation" className="space-y-8">
+            {/* Shopify Setup Checklist - shows for Shopify platform */}
+            {currentWorkspace?.platform === 'shopify' && (
+              <section>
+                <div className="metric-card">
+                  <ShopifySetupChecklist />
+                </div>
+              </section>
+            )}
+
             {/* Pixel Status Section */}
             <section>
               <div className="metric-card">
