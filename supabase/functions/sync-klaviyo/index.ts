@@ -36,6 +36,12 @@ const HIGH_VALUE_EVENTS = new Set([
   // Abandonment signals (valuable for flows)
   'Checkout Abandoned',
   'Cart Abandoned',
+  
+  // === SF ABANDONMENT EVENTS (auto-sent by Signal Stitcher) ===
+  // These are sent automatically when abandonment is detected
+  'SF Checkout Abandoned',
+  'SF Cart Abandoned',
+  'SF High Intent Browse',
 ]);
 
 // ===== EVENTS THAT BLOCK EVENT TRACKING (but still update profile!) =====
@@ -721,16 +727,102 @@ Deno.serve(async (req) => {
         const updatedFlags: Record<string, unknown> = { ...flags, first_sync_completed: true };
         const dropOffStage = behavioralProps.sf_dropoff_stage;
         
-        // Mark checkout abandoned synced
-        if (dropOffStage === 'checkout_abandoned') {
+        // Check if we should send abandonment events (destination config)
+        const sendAbandonmentEvents = destination.send_abandonment_events !== false;
+        
+        // ===== SEND SF ABANDONMENT EVENTS (Metric Triggers for Klaviyo Flows) =====
+        // These events enable Metric-based flow triggers in Klaviyo
+        
+        // Mark checkout abandoned synced AND send event
+        if (dropOffStage === 'checkout_abandoned' && !flags.checkout_abandoned_synced) {
           updatedFlags.checkout_abandoned_synced = true;
           updatedFlags.checkout_abandoned_synced_at = new Date().toISOString();
+          
+          // Send SF Checkout Abandoned event for Metric trigger
+          if (sendAbandonmentEvents) {
+            const abandonmentEvent: KlaviyoEvent = {
+              type: 'event',
+              attributes: {
+                metric: {
+                  data: {
+                    type: 'metric',
+                    attributes: { name: 'SF Checkout Abandoned' },
+                  },
+                },
+                profile: {
+                  data: {
+                    type: 'profile',
+                    attributes: {
+                      email: user.primary_email,
+                      external_id: user.id,
+                    },
+                  },
+                },
+                properties: {
+                  sf_intent_score: behavioralProps.sf_intent_score,
+                  sf_dropoff_stage: dropOffStage,
+                  sf_checkout_abandoned_at: behavioralProps.sf_checkout_abandoned_at,
+                  sf_top_category: behavioralProps.sf_top_category,
+                  sf_session_count_30d: behavioralProps.sf_session_count_30d,
+                  abandoned_at: new Date().toISOString(),
+                },
+                time: new Date().toISOString(),
+                unique_id: `sf_checkout_abandoned_${user.id}_${Date.now()}`,
+              },
+            };
+            
+            const eventResult = await trackKlaviyoEvent(klaviyoApiKey, abandonmentEvent);
+            if (eventResult.success) {
+              console.log(`[ABANDONMENT] SF Checkout Abandoned event sent for ${user.primary_email}`);
+              eventsSent++;
+            }
+          }
         }
         
-        // Mark cart abandoned synced
-        if (dropOffStage === 'cart_abandoned') {
+        // Mark cart abandoned synced AND send event
+        if (dropOffStage === 'cart_abandoned' && !flags.cart_abandoned_synced) {
           updatedFlags.cart_abandoned_synced = true;
           updatedFlags.cart_abandoned_synced_at = new Date().toISOString();
+          
+          // Send SF Cart Abandoned event for Metric trigger
+          if (sendAbandonmentEvents) {
+            const abandonmentEvent: KlaviyoEvent = {
+              type: 'event',
+              attributes: {
+                metric: {
+                  data: {
+                    type: 'metric',
+                    attributes: { name: 'SF Cart Abandoned' },
+                  },
+                },
+                profile: {
+                  data: {
+                    type: 'profile',
+                    attributes: {
+                      email: user.primary_email,
+                      external_id: user.id,
+                    },
+                  },
+                },
+                properties: {
+                  sf_intent_score: behavioralProps.sf_intent_score,
+                  sf_dropoff_stage: dropOffStage,
+                  sf_cart_abandoned_at: behavioralProps.sf_cart_abandoned_at,
+                  sf_top_category: behavioralProps.sf_top_category,
+                  sf_session_count_30d: behavioralProps.sf_session_count_30d,
+                  abandoned_at: new Date().toISOString(),
+                },
+                time: new Date().toISOString(),
+                unique_id: `sf_cart_abandoned_${user.id}_${Date.now()}`,
+              },
+            };
+            
+            const eventResult = await trackKlaviyoEvent(klaviyoApiKey, abandonmentEvent);
+            if (eventResult.success) {
+              console.log(`[ABANDONMENT] SF Cart Abandoned event sent for ${user.primary_email}`);
+              eventsSent++;
+            }
+          }
         }
         
         // Mark cart synced (high intent cart event)
@@ -743,6 +835,45 @@ Deno.serve(async (req) => {
         if (forceReason === 'product_high_intent') {
           updatedFlags.product_view_synced = true;
           updatedFlags.product_view_synced_at = new Date().toISOString();
+          
+          // Send SF High Intent Browse event for Metric trigger (optional)
+          if (sendAbandonmentEvents && Number(computed.intent_score) >= 60) {
+            const browseEvent: KlaviyoEvent = {
+              type: 'event',
+              attributes: {
+                metric: {
+                  data: {
+                    type: 'metric',
+                    attributes: { name: 'SF High Intent Browse' },
+                  },
+                },
+                profile: {
+                  data: {
+                    type: 'profile',
+                    attributes: {
+                      email: user.primary_email,
+                      external_id: user.id,
+                    },
+                  },
+                },
+                properties: {
+                  sf_intent_score: behavioralProps.sf_intent_score,
+                  sf_dropoff_stage: dropOffStage,
+                  sf_top_category: behavioralProps.sf_top_category,
+                  sf_viewed_products_7d: behavioralProps.sf_viewed_products_7d,
+                  detected_at: new Date().toISOString(),
+                },
+                time: new Date().toISOString(),
+                unique_id: `sf_high_intent_browse_${user.id}_${Date.now()}`,
+              },
+            };
+            
+            const eventResult = await trackKlaviyoEvent(klaviyoApiKey, browseEvent);
+            if (eventResult.success) {
+              console.log(`[ABANDONMENT] SF High Intent Browse event sent for ${user.primary_email}`);
+              eventsSent++;
+            }
+          }
         }
         
         // Persist flags and computed updates
