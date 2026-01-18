@@ -1,7 +1,11 @@
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { ValueMetricHero } from "@/components/dashboard/ValueMetricHero";
+import { ValueProof } from "@/components/dashboard/ValueProof";
 import { SegmentsWidget } from "@/components/dashboard/SegmentsWidget";
 import { SyncStatusCompact } from "@/components/dashboard/SyncStatusCompact";
+import { SyncHealth } from "@/components/dashboard/SyncHealth";
+import { DuplicatePrevention } from "@/components/dashboard/DuplicatePrevention";
+import { KlaviyoFlowGuide } from "@/components/dashboard/KlaviyoFlowGuide";
 import { PredictiveRegistry } from "@/components/dashboard/PredictiveRegistry";
 import { IdentityStitchingStatus } from "@/components/dashboard/IdentityStitchingStatus";
 import { 
@@ -48,7 +52,7 @@ const Dashboard = () => {
               )}
             </div>
             <p className="text-xs md:text-sm text-muted-foreground mt-1">
-              Recupera utenti persi nei flow Klaviyo
+              Behavior & Identity Layer per Klaviyo
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -63,8 +67,17 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* MAIN VALUE METRIC - The ONE number that matters */}
+        {/* VALUE PROOF - A/B/C Comparison */}
+        <ValueProof />
+
+        {/* MAIN VALUE METRIC - Extended Funnel */}
         <ValueMetricHero />
+
+        {/* Sync Health + Duplicate Prevention */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+          <SyncHealth />
+          <DuplicatePrevention />
+        </div>
 
         {/* Identity Stitching + Predictive Registry */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
@@ -72,11 +85,14 @@ const Dashboard = () => {
           <PredictiveRegistry />
         </div>
 
-        {/* Sync Status - Compact version */}
-        <SyncStatusCompact />
+        {/* Klaviyo Flow Guide */}
+        <KlaviyoFlowGuide />
 
         {/* Segments */}
         <SegmentsWidget />
+
+        {/* Sync Status - Compact version */}
+        <SyncStatusCompact />
 
         {/* Setup Checklist - Only show if incomplete */}
         {(!hasApiKey || !klaviyoConnected || !(health && health.eventsToday > 0)) && (

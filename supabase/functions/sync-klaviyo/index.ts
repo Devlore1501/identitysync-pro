@@ -466,7 +466,89 @@ function buildBehavioralProperties(user: {
   };
 }
 
+/**
+ * Bootstrap Klaviyo properties for a workspace
+ * Creates a test profile with all sf_* properties to ensure they exist in Klaviyo
+ */
+// deno-lint-ignore no-explicit-any
+async function bootstrapKlaviyoProperties(
+  supabase: any,
+  klaviyoApiKey: string,
+  workspaceId: string
+): Promise<boolean> {
+  console.log(`[BOOTSTRAP] Starting for workspace ${workspaceId}`);
+
+  // Find first user with email in this workspace
+  const { data: testUser } = await supabase
+    .from('users_unified')
+    .select('id, primary_email')
+    .eq('workspace_id', workspaceId)
+    .not('primary_email', 'is', null)
+    .limit(1)
+    .single();
+
+  if (!testUser?.primary_email) {
+    console.log('[BOOTSTRAP] No user with email found, skipping');
+    return false;
+  }
+
+  const now = new Date().toISOString();
+  
+  const bootstrapProfile: KlaviyoProfile = {
+    type: 'profile',
+    attributes: {
+      email: testUser.primary_email as string,
+      external_id: testUser.id as string,
+      properties: {
+        sf_intent_score: 0,
+        sf_frequency_score: 10,
+        sf_depth_score: 0,
+        sf_dropoff_stage: 'browsing',
+        sf_cart_abandoned_at: null,
+        sf_checkout_abandoned_at: null,
+        sf_last_action: 'bootstrap',
+        sf_last_action_at: now,
+        sf_last_checkout_id: null,
+        sf_last_cart_token: null,
+        sf_lifetime_value: 0,
+        sf_orders_count: 0,
+        sf_computed_at: now,
+        _sf_bootstrapped: true,
+      },
+    },
+  };
+
+  const result = await upsertKlaviyoProfile(klaviyoApiKey, bootstrapProfile, 'properties_bootstrap');
+  
+  if (result.success) {
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('settings')
+      .eq('id', workspaceId)
+      .single();
+
+    const currentSettings = (workspace?.settings || {}) as Record<string, unknown>;
+    await supabase
+      .from('workspaces')
+      .update({
+        settings: {
+          ...currentSettings,
+          klaviyo_properties_bootstrapped: true,
+          klaviyo_properties_bootstrapped_at: now,
+        }
+      })
+      .eq('id', workspaceId);
+
+    console.log(`[BOOTSTRAP] Complete for ${testUser.primary_email}`);
+    return true;
+  }
+  
+  return false;
+}
+
 Deno.serve(async (req) => {
+  const startTime = Date.now();
+  
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -476,7 +558,11 @@ Deno.serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    console.log('[sync-klaviyo] Starting sync run...');
+    console.log(JSON.stringify({
+      fn: 'sync-klaviyo',
+      action: 'start',
+      ts: new Date().toISOString()
+    }));
 
     // Get pending sync jobs (limit to 50 per run)
     const { data: jobs, error: jobsError } = await supabase
@@ -494,7 +580,12 @@ Deno.serve(async (req) => {
       .limit(50);
 
     if (jobsError) {
-      console.error('[sync-klaviyo] Error fetching sync jobs:', jobsError);
+      console.error(JSON.stringify({
+        fn: 'sync-klaviyo',
+        error: 'fetch_jobs_failed',
+        message: jobsError.message,
+        ts: new Date().toISOString()
+      }));
       return new Response(
         JSON.stringify({ error: 'Failed to fetch sync jobs' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -502,14 +593,18 @@ Deno.serve(async (req) => {
     }
 
     if (!jobs || jobs.length === 0) {
-      console.log('[sync-klaviyo] No pending jobs');
       return new Response(
         JSON.stringify({ message: 'No pending jobs', processed: 0 }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`[sync-klaviyo] Processing ${jobs.length} jobs...`);
+    console.log(JSON.stringify({
+      fn: 'sync-klaviyo',
+      action: 'processing',
+      job_count: jobs.length,
+      ts: new Date().toISOString()
+    }));
 
     let successCount = 0;
     let failCount = 0;
@@ -519,6 +614,7 @@ Deno.serve(async (req) => {
     let eventsSent = 0;
     let eventsBlocked = 0;
     let flagsUpdated = 0;
+    let bootstrapsCompleted = 0;
 
     for (const job of jobs) {
       // Mark as running
