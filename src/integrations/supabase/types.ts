@@ -207,6 +207,7 @@ export type Database = {
           last_sync_at: string | null
           name: string
           property_mapping: Json
+          send_abandonment_events: boolean | null
           send_events_to_klaviyo: boolean | null
           type: Database["public"]["Enums"]["destination_type"]
           updated_at: string
@@ -222,6 +223,7 @@ export type Database = {
           last_sync_at?: string | null
           name: string
           property_mapping?: Json
+          send_abandonment_events?: boolean | null
           send_events_to_klaviyo?: boolean | null
           type: Database["public"]["Enums"]["destination_type"]
           updated_at?: string
@@ -237,6 +239,7 @@ export type Database = {
           last_sync_at?: string | null
           name?: string
           property_mapping?: Json
+          send_abandonment_events?: boolean | null
           send_events_to_klaviyo?: boolean | null
           type?: Database["public"]["Enums"]["destination_type"]
           updated_at?: string
