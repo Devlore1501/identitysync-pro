@@ -401,17 +401,19 @@ Deno.serve(async (req) => {
     // Parse payload
     const payload: CollectPayload = await req.json();
     
-    // STRUCTURED LOGGING
+    // STRUCTURED LOGGING - Phase 6 compliant
+    const props = (payload.properties || {}) as Record<string, unknown>;
     console.log(JSON.stringify({
       fn: 'collect',
+      action: 'event_received',
       workspace_id: authResult.workspaceId,
       event_name: payload.event,
       anonymous_id: payload.context?.anonymous_id,
       session_id: payload.context?.session_id,
       has_email: !!payload.context?.traits?.email,
-      checkout_id: (payload.properties as Record<string, unknown>)?.checkout_id,
-      cart_token: (payload.properties as Record<string, unknown>)?.cart_token,
-      order_id: (payload.properties as Record<string, unknown>)?.order_id,
+      checkout_id: props.checkout_id || props.checkout_token,
+      cart_token: props.cart_token,
+      order_id: props.order_id || props.order_number,
       ts: new Date().toISOString()
     }));
 
@@ -491,6 +493,19 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // STRUCTURED LOGGING - Phase 6 compliant with fingerprint
+    console.log(JSON.stringify({
+      fn: 'collect',
+      action: result.isDuplicate ? 'duplicate_detected' : 'event_processed',
+      workspace_id: authResult.workspaceId,
+      event_id: result.eventId,
+      unified_user_id: result.unifiedUserId,
+      deduped: result.isDuplicate,
+      sync_jobs_created: result.syncJobsCreated,
+      duration_ms: Date.now() - startTime,
+      ts: new Date().toISOString()
+    }));
 
     return new Response(
       JSON.stringify({ 
