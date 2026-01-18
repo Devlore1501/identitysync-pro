@@ -70,12 +70,18 @@ Deno.serve(async (req) => {
     const payload: IdentifyPayload = await req.json();
     const workspaceId = authResult.workspaceId!;
 
-    console.log('=== IDENTIFY RECEIVED ===');
-    console.log('Anonymous ID:', payload.anonymous_id || 'not provided');
-    console.log('Email:', payload.email || 'not provided');
-    console.log('User ID:', payload.user_id || 'not provided');
-    console.log('Phone:', payload.phone || 'not provided');
-    console.log('Workspace:', workspaceId);
+    // STRUCTURED LOGGING - Phase 6 compliant
+    console.log(JSON.stringify({
+      fn: 'identify',
+      action: 'received',
+      workspace_id: workspaceId,
+      anonymous_id: payload.anonymous_id,
+      email: payload.email ? '***@***' : null,
+      customer_id: payload.user_id,
+      has_phone: !!payload.phone,
+      has_ad_ids: !!(payload.traits?.ad_ids && Object.keys(payload.traits.ad_ids).length > 0),
+      ts: new Date().toISOString()
+    }));
 
     // SECURITY: Validate traits payload size to prevent DoS attacks
     const traitsSize = JSON.stringify(payload.traits || {}).length;
@@ -463,6 +469,19 @@ Deno.serve(async (req) => {
         }
       }
     }
+
+    // STRUCTURED LOGGING - Phase 6 compliant
+    console.log(JSON.stringify({
+      fn: 'identify',
+      action: 'completed',
+      workspace_id: workspaceId,
+      unified_user_id: unifiedUserId,
+      is_new_user: isNewUser,
+      identity_merged: identityMerged,
+      events_linked: eventsLinked,
+      sync_jobs_created: syncJobsCreated,
+      ts: new Date().toISOString()
+    }));
 
     return new Response(
       JSON.stringify({ 
