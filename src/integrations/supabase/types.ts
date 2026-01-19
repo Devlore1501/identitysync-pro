@@ -1014,6 +1014,14 @@ export type Database = {
         }
         Returns: Json
       }
+      merge_duplicate_users: {
+        Args: { p_workspace_id?: string }
+        Returns: {
+          kept_user_id: string
+          merged_count: number
+          removed_ids: string[]
+        }[]
+      }
       process_event_fast: {
         Args: {
           p_anonymous_id: string
