@@ -428,6 +428,61 @@ export type Database = {
           },
         ]
       }
+      klaviyo_events_sent: {
+        Row: {
+          destination_id: string
+          event_type: string
+          id: string
+          sent_at: string
+          sent_date: string
+          unified_user_id: string
+          unique_id: string
+          workspace_id: string
+        }
+        Insert: {
+          destination_id: string
+          event_type: string
+          id?: string
+          sent_at?: string
+          sent_date?: string
+          unified_user_id: string
+          unique_id: string
+          workspace_id: string
+        }
+        Update: {
+          destination_id?: string
+          event_type?: string
+          id?: string
+          sent_at?: string
+          sent_date?: string
+          unified_user_id?: string
+          unique_id?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "klaviyo_events_sent_destination_id_fkey"
+            columns: ["destination_id"]
+            isOneToOne: false
+            referencedRelation: "destinations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "klaviyo_events_sent_unified_user_id_fkey"
+            columns: ["unified_user_id"]
+            isOneToOne: false
+            referencedRelation: "users_unified"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "klaviyo_events_sent_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       predictive_signals: {
         Row: {
           confidence: number
@@ -841,6 +896,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      can_send_abandonment_event: {
+        Args: {
+          p_cooldown_hours?: number
+          p_destination_id: string
+          p_event_type: string
+          p_user_id: string
+        }
+        Returns: boolean
+      }
       decay_recency_scores: { Args: never; Returns: number }
       detect_abandonments: {
         Args: { p_workspace_id?: string }
@@ -910,6 +974,16 @@ export type Database = {
       recompute_user_signals_from_events: {
         Args: { p_user_id: string }
         Returns: Json
+      }
+      record_abandonment_event_sent: {
+        Args: {
+          p_destination_id: string
+          p_event_type: string
+          p_unique_id: string
+          p_user_id: string
+          p_workspace_id: string
+        }
+        Returns: string
       }
       resolve_identity:
         | {

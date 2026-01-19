@@ -732,49 +732,83 @@ Deno.serve(async (req) => {
         
         // ===== SEND SF ABANDONMENT EVENTS (Metric Triggers for Klaviyo Flows) =====
         // These events enable Metric-based flow triggers in Klaviyo
+        // CRITICAL: Use DB check to prevent duplicate events (anti-spam)
+        
+        // Helper function to check if we can send abandonment event (24h cooldown)
+        const canSendAbandonmentEvent = async (eventType: string): Promise<boolean> => {
+          const { data: canSend } = await supabase.rpc('can_send_abandonment_event', {
+            p_user_id: user.id,
+            p_destination_id: destination.id,
+            p_event_type: eventType,
+            p_cooldown_hours: 24
+          });
+          return canSend === true;
+        };
+        
+        // Helper function to record sent event (prevents duplicates via unique index)
+        const recordEventSent = async (eventType: string, uniqueId: string): Promise<void> => {
+          await supabase.rpc('record_abandonment_event_sent', {
+            p_user_id: user.id,
+            p_destination_id: destination.id,
+            p_event_type: eventType,
+            p_unique_id: uniqueId,
+            p_workspace_id: job.workspace_id
+          });
+        };
+        
+        // Generate deterministic unique_id (date-based, not timestamp-based)
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
         
         // Mark checkout abandoned synced AND send event
         if (dropOffStage === 'checkout_abandoned' && !flags.checkout_abandoned_synced) {
           updatedFlags.checkout_abandoned_synced = true;
           updatedFlags.checkout_abandoned_synced_at = new Date().toISOString();
           
-          // Send SF Checkout Abandoned event for Metric trigger
+          // Send SF Checkout Abandoned event for Metric trigger (with dedupe check)
           if (sendAbandonmentEvents) {
-            const abandonmentEvent: KlaviyoEvent = {
-              type: 'event',
-              attributes: {
-                metric: {
-                  data: {
-                    type: 'metric',
-                    attributes: { name: 'SF Checkout Abandoned' },
-                  },
-                },
-                profile: {
-                  data: {
-                    type: 'profile',
-                    attributes: {
-                      email: user.primary_email,
-                      external_id: user.id,
+            const canSend = await canSendAbandonmentEvent('SF Checkout Abandoned');
+            
+            if (canSend) {
+              const uniqueId = `sf_checkout_abandoned_${user.id}_${today}`;
+              const abandonmentEvent: KlaviyoEvent = {
+                type: 'event',
+                attributes: {
+                  metric: {
+                    data: {
+                      type: 'metric',
+                      attributes: { name: 'SF Checkout Abandoned' },
                     },
                   },
+                  profile: {
+                    data: {
+                      type: 'profile',
+                      attributes: {
+                        email: user.primary_email,
+                        external_id: user.id,
+                      },
+                    },
+                  },
+                  properties: {
+                    sf_intent_score: behavioralProps.sf_intent_score,
+                    sf_dropoff_stage: dropOffStage,
+                    sf_checkout_abandoned_at: behavioralProps.sf_checkout_abandoned_at,
+                    sf_top_category: behavioralProps.sf_top_category,
+                    sf_session_count_30d: behavioralProps.sf_session_count_30d,
+                    abandoned_at: new Date().toISOString(),
+                  },
+                  time: new Date().toISOString(),
+                  unique_id: uniqueId,
                 },
-                properties: {
-                  sf_intent_score: behavioralProps.sf_intent_score,
-                  sf_dropoff_stage: dropOffStage,
-                  sf_checkout_abandoned_at: behavioralProps.sf_checkout_abandoned_at,
-                  sf_top_category: behavioralProps.sf_top_category,
-                  sf_session_count_30d: behavioralProps.sf_session_count_30d,
-                  abandoned_at: new Date().toISOString(),
-                },
-                time: new Date().toISOString(),
-                unique_id: `sf_checkout_abandoned_${user.id}_${Date.now()}`,
-              },
-            };
-            
-            const eventResult = await trackKlaviyoEvent(klaviyoApiKey, abandonmentEvent);
-            if (eventResult.success) {
-              console.log(`[ABANDONMENT] SF Checkout Abandoned event sent for ${user.primary_email}`);
-              eventsSent++;
+              };
+              
+              const eventResult = await trackKlaviyoEvent(klaviyoApiKey, abandonmentEvent);
+              if (eventResult.success) {
+                await recordEventSent('SF Checkout Abandoned', uniqueId);
+                console.log(`[ABANDONMENT] SF Checkout Abandoned event sent for ${user.primary_email}`);
+                eventsSent++;
+              }
+            } else {
+              console.log(`[DEDUPE] SF Checkout Abandoned already sent for ${user.primary_email} in last 24h`);
             }
           }
         }
@@ -784,43 +818,51 @@ Deno.serve(async (req) => {
           updatedFlags.cart_abandoned_synced = true;
           updatedFlags.cart_abandoned_synced_at = new Date().toISOString();
           
-          // Send SF Cart Abandoned event for Metric trigger
+          // Send SF Cart Abandoned event for Metric trigger (with dedupe check)
           if (sendAbandonmentEvents) {
-            const abandonmentEvent: KlaviyoEvent = {
-              type: 'event',
-              attributes: {
-                metric: {
-                  data: {
-                    type: 'metric',
-                    attributes: { name: 'SF Cart Abandoned' },
-                  },
-                },
-                profile: {
-                  data: {
-                    type: 'profile',
-                    attributes: {
-                      email: user.primary_email,
-                      external_id: user.id,
+            const canSend = await canSendAbandonmentEvent('SF Cart Abandoned');
+            
+            if (canSend) {
+              const uniqueId = `sf_cart_abandoned_${user.id}_${today}`;
+              const abandonmentEvent: KlaviyoEvent = {
+                type: 'event',
+                attributes: {
+                  metric: {
+                    data: {
+                      type: 'metric',
+                      attributes: { name: 'SF Cart Abandoned' },
                     },
                   },
+                  profile: {
+                    data: {
+                      type: 'profile',
+                      attributes: {
+                        email: user.primary_email,
+                        external_id: user.id,
+                      },
+                    },
+                  },
+                  properties: {
+                    sf_intent_score: behavioralProps.sf_intent_score,
+                    sf_dropoff_stage: dropOffStage,
+                    sf_cart_abandoned_at: behavioralProps.sf_cart_abandoned_at,
+                    sf_top_category: behavioralProps.sf_top_category,
+                    sf_session_count_30d: behavioralProps.sf_session_count_30d,
+                    abandoned_at: new Date().toISOString(),
+                  },
+                  time: new Date().toISOString(),
+                  unique_id: uniqueId,
                 },
-                properties: {
-                  sf_intent_score: behavioralProps.sf_intent_score,
-                  sf_dropoff_stage: dropOffStage,
-                  sf_cart_abandoned_at: behavioralProps.sf_cart_abandoned_at,
-                  sf_top_category: behavioralProps.sf_top_category,
-                  sf_session_count_30d: behavioralProps.sf_session_count_30d,
-                  abandoned_at: new Date().toISOString(),
-                },
-                time: new Date().toISOString(),
-                unique_id: `sf_cart_abandoned_${user.id}_${Date.now()}`,
-              },
-            };
-            
-            const eventResult = await trackKlaviyoEvent(klaviyoApiKey, abandonmentEvent);
-            if (eventResult.success) {
-              console.log(`[ABANDONMENT] SF Cart Abandoned event sent for ${user.primary_email}`);
-              eventsSent++;
+              };
+              
+              const eventResult = await trackKlaviyoEvent(klaviyoApiKey, abandonmentEvent);
+              if (eventResult.success) {
+                await recordEventSent('SF Cart Abandoned', uniqueId);
+                console.log(`[ABANDONMENT] SF Cart Abandoned event sent for ${user.primary_email}`);
+                eventsSent++;
+              }
+            } else {
+              console.log(`[DEDUPE] SF Cart Abandoned already sent for ${user.primary_email} in last 24h`);
             }
           }
         }
@@ -836,42 +878,50 @@ Deno.serve(async (req) => {
           updatedFlags.product_view_synced = true;
           updatedFlags.product_view_synced_at = new Date().toISOString();
           
-          // Send SF High Intent Browse event for Metric trigger (optional)
+          // Send SF High Intent Browse event for Metric trigger (with dedupe check)
           if (sendAbandonmentEvents && Number(computed.intent_score) >= 60) {
-            const browseEvent: KlaviyoEvent = {
-              type: 'event',
-              attributes: {
-                metric: {
-                  data: {
-                    type: 'metric',
-                    attributes: { name: 'SF High Intent Browse' },
-                  },
-                },
-                profile: {
-                  data: {
-                    type: 'profile',
-                    attributes: {
-                      email: user.primary_email,
-                      external_id: user.id,
+            const canSend = await canSendAbandonmentEvent('SF High Intent Browse');
+            
+            if (canSend) {
+              const uniqueId = `sf_high_intent_browse_${user.id}_${today}`;
+              const browseEvent: KlaviyoEvent = {
+                type: 'event',
+                attributes: {
+                  metric: {
+                    data: {
+                      type: 'metric',
+                      attributes: { name: 'SF High Intent Browse' },
                     },
                   },
+                  profile: {
+                    data: {
+                      type: 'profile',
+                      attributes: {
+                        email: user.primary_email,
+                        external_id: user.id,
+                      },
+                    },
+                  },
+                  properties: {
+                    sf_intent_score: behavioralProps.sf_intent_score,
+                    sf_dropoff_stage: dropOffStage,
+                    sf_top_category: behavioralProps.sf_top_category,
+                    sf_viewed_products_7d: behavioralProps.sf_viewed_products_7d,
+                    detected_at: new Date().toISOString(),
+                  },
+                  time: new Date().toISOString(),
+                  unique_id: uniqueId,
                 },
-                properties: {
-                  sf_intent_score: behavioralProps.sf_intent_score,
-                  sf_dropoff_stage: dropOffStage,
-                  sf_top_category: behavioralProps.sf_top_category,
-                  sf_viewed_products_7d: behavioralProps.sf_viewed_products_7d,
-                  detected_at: new Date().toISOString(),
-                },
-                time: new Date().toISOString(),
-                unique_id: `sf_high_intent_browse_${user.id}_${Date.now()}`,
-              },
-            };
-            
-            const eventResult = await trackKlaviyoEvent(klaviyoApiKey, browseEvent);
-            if (eventResult.success) {
-              console.log(`[ABANDONMENT] SF High Intent Browse event sent for ${user.primary_email}`);
-              eventsSent++;
+              };
+              
+              const eventResult = await trackKlaviyoEvent(klaviyoApiKey, browseEvent);
+              if (eventResult.success) {
+                await recordEventSent('SF High Intent Browse', uniqueId);
+                console.log(`[ABANDONMENT] SF High Intent Browse event sent for ${user.primary_email}`);
+                eventsSent++;
+              }
+            } else {
+              console.log(`[DEDUPE] SF High Intent Browse already sent for ${user.primary_email} in last 24h`);
             }
           }
         }
