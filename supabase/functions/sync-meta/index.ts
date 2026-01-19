@@ -117,7 +117,24 @@ Deno.serve(async (req) => {
     console.log('[META] Starting sync-meta function');
     console.log(`[META] Global credentials configured: ${!!globalAccessToken && !!globalPixelId}`);
 
-    // Get pending sync jobs for Meta destinations (limit 50)
+    // First get Meta destination IDs to filter jobs efficiently
+    const { data: metaDestinations } = await supabase
+      .from('destinations')
+      .select('id')
+      .eq('type', 'meta');
+    
+    const metaDestIds = (metaDestinations || []).map(d => d.id);
+    
+    if (metaDestIds.length === 0) {
+      return new Response(
+        JSON.stringify({ message: 'No Meta destinations configured', processed: 0 }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    console.log(`[META] Found ${metaDestIds.length} Meta destinations`);
+
+    // Get pending sync jobs for Meta destinations only (limit 50)
     const { data: jobs, error: jobsError } = await supabase
       .from('sync_jobs')
       .select(`
@@ -127,6 +144,7 @@ Deno.serve(async (req) => {
         event:events(*)
       `)
       .eq('status', 'pending')
+      .in('destination_id', metaDestIds)
       .lte('scheduled_at', new Date().toISOString())
       .lt('attempts', 3)
       .order('scheduled_at', { ascending: true })
@@ -140,8 +158,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Filter only Meta jobs
-    const metaJobs = (jobs || []).filter(job => job.destination?.type === 'meta');
+    const metaJobs = jobs || [];
 
     if (metaJobs.length === 0) {
       return new Response(
