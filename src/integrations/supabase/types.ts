@@ -770,6 +770,74 @@ export type Database = {
           },
         ]
       }
+      utm_campaigns: {
+        Row: {
+          base_url: string
+          clicks_count: number | null
+          conversions_count: number | null
+          created_at: string | null
+          events_count: number | null
+          full_url: string
+          id: string
+          name: string
+          revenue_attributed: number | null
+          short_code: string | null
+          updated_at: string | null
+          utm_campaign: string
+          utm_content: string | null
+          utm_medium: string
+          utm_source: string
+          utm_term: string | null
+          workspace_id: string
+        }
+        Insert: {
+          base_url: string
+          clicks_count?: number | null
+          conversions_count?: number | null
+          created_at?: string | null
+          events_count?: number | null
+          full_url: string
+          id?: string
+          name: string
+          revenue_attributed?: number | null
+          short_code?: string | null
+          updated_at?: string | null
+          utm_campaign: string
+          utm_content?: string | null
+          utm_medium: string
+          utm_source: string
+          utm_term?: string | null
+          workspace_id: string
+        }
+        Update: {
+          base_url?: string
+          clicks_count?: number | null
+          conversions_count?: number | null
+          created_at?: string | null
+          events_count?: number | null
+          full_url?: string
+          id?: string
+          name?: string
+          revenue_attributed?: number | null
+          short_code?: string | null
+          updated_at?: string | null
+          utm_campaign?: string
+          utm_content?: string | null
+          utm_medium?: string
+          utm_source?: string
+          utm_term?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "utm_campaigns_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workspace_health: {
         Row: {
           alert_no_ecommerce: boolean | null
@@ -914,6 +982,7 @@ export type Database = {
           users_updated: number
         }[]
       }
+      generate_utm_short_code: { Args: never; Returns: string }
       get_account_info: {
         Args: { p_account_id: string }
         Returns: {

@@ -16,6 +16,7 @@ import Destinations from "./pages/Destinations";
 import DashboardSettings from "./pages/DashboardSettings";
 import AuditLogs from "./pages/AuditLogs";
 import Flows from "./pages/Flows";
+import UtmTracker from "./pages/UtmTracker";
 import NotFound from "./pages/NotFound";
 import PricingPage from "./pages/Pricing";
 import CheckoutPage from "./pages/Checkout";
@@ -79,6 +80,11 @@ const App = () => (
               <Route path="/dashboard/flows" element={
                 <ProtectedRoute>
                   <Flows />
+                </ProtectedRoute>
+              } />
+              <Route path="/dashboard/utm" element={
+                <ProtectedRoute>
+                  <UtmTracker />
                 </ProtectedRoute>
               } />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

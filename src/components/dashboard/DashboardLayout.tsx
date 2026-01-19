@@ -17,7 +17,8 @@ import {
   FileText,
   Menu,
   X,
-  Sparkles
+  Sparkles,
+  Link as LinkIcon
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -45,6 +46,7 @@ const navItems: NavItem[] = [
   { label: "Events", icon: Activity, href: "/dashboard/events" },
   { label: "Identities", icon: Users, href: "/dashboard/identities" },
   { label: "Flows", icon: Sparkles, href: "/dashboard/flows" },
+  { label: "UTM Tracker", icon: LinkIcon, href: "/dashboard/utm" },
   { label: "Destinations", icon: Send, href: "/dashboard/destinations" },
   { label: "Audit Logs", icon: FileText, href: "/dashboard/audit-logs" },
   { label: "Settings", icon: Settings, href: "/dashboard/settings" },
