@@ -109,6 +109,13 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    
+    // Get Meta credentials from environment (global secrets)
+    const globalAccessToken = Deno.env.get('META_ACCESS_TOKEN');
+    const globalPixelId = Deno.env.get('META_PIXEL_ID');
+    
+    console.log('[META] Starting sync-meta function');
+    console.log(`[META] Global credentials configured: ${!!globalAccessToken && !!globalPixelId}`);
 
     // Get pending sync jobs for Meta destinations (limit 50)
     const { data: jobs, error: jobsError } = await supabase
@@ -126,7 +133,7 @@ Deno.serve(async (req) => {
       .limit(50);
 
     if (jobsError) {
-      console.error('Error fetching sync jobs:', jobsError);
+      console.error('[META] Error fetching sync jobs:', jobsError);
       return new Response(
         JSON.stringify({ error: 'Failed to fetch sync jobs' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -142,6 +149,8 @@ Deno.serve(async (req) => {
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+    
+    console.log(`[META] Processing ${metaJobs.length} jobs`);
 
     let successCount = 0;
     let failCount = 0;
@@ -161,6 +170,7 @@ Deno.serve(async (req) => {
       const destination = destJobs[0].destination;
       
       if (!destination?.enabled) {
+        console.log(`[META] Destination ${destId} is disabled, skipping ${destJobs.length} jobs`);
         for (const job of destJobs) {
           await supabase
             .from('sync_jobs')
@@ -176,11 +186,14 @@ Deno.serve(async (req) => {
       }
 
       const config = destination.config as Record<string, unknown>;
-      const pixelId = config?.pixel_id as string;
-      const accessToken = config?.access_token as string;
+      
+      // Use destination config first, fallback to global secrets
+      const pixelId = (config?.pixel_id as string) || globalPixelId;
+      const accessToken = (config?.access_token as string) || globalAccessToken;
       const testEventCode = config?.test_event_code as string | undefined;
 
       if (!pixelId || !accessToken) {
+        console.error(`[META] Missing credentials for destination ${destId}`);
         for (const job of destJobs) {
           await supabase
             .from('sync_jobs')
@@ -194,6 +207,8 @@ Deno.serve(async (req) => {
         failCount += destJobs.length;
         continue;
       }
+      
+      console.log(`[META] Processing ${destJobs.length} jobs for destination ${destination.name}`);
 
       // Mark all jobs as running
       for (const job of destJobs) {
